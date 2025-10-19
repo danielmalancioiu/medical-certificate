@@ -1,0 +1,535 @@
+%latex model.tex
+%bibtex model
+%latex model.tex
+%latex model.tex
+%pdflatex model.tex
+
+%se poate lucra si online (de ex www.overleaf.com)
+
+
+\documentclass[runningheads,a4paper,11pt]{report}
+
+\usepackage{algorithmic}
+\usepackage{algorithm}
+\usepackage{array}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{amsthm}
+\usepackage{caption}
+\usepackage{comment}
+\usepackage{epsfig}
+\usepackage{fancyhdr}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{graphicx}
+\usepackage[colorlinks]{hyperref}
+\usepackage[latin1]{inputenc}
+\usepackage{multicol}
+\usepackage{multirow}
+\usepackage{rotating}
+\usepackage{setspace}
+\usepackage{subfigure}
+\usepackage{url}
+\usepackage{verbatim}
+\usepackage{xcolor}
+
+\geometry{a4paper,top=3cm,left=2cm,right=2cm,bottom=3cm}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[LE,RO]{Medical Certificates}
+\fancyhead[RE,LO]{InnoMind}
+\fancyfoot[RE,LO]{ITSG 2025-2026}
+\fancyfoot[LE,RO]{\thepage}
+
+\renewcommand{\headrulewidth}{2pt}
+\renewcommand{\footrulewidth}{1pt}
+\renewcommand{\headrule}{\hbox to\headwidth{%
+  \color{lime}\leaders\hrule height \headrulewidth\hfill}}
+\renewcommand{\footrule}{\hbox to\headwidth{%
+  \color{lime}\leaders\hrule height \footrulewidth\hfill}}
+
+\hypersetup{
+pdftitle={artTitle},
+pdfauthor={name},
+pdfkeywords={pdf, latex, tex, ps2pdf, dvipdfm, pdflatex},
+bookmarksnumbered,
+pdfstartview={FitH},
+urlcolor=cyan,
+colorlinks=true,
+linkcolor=red,
+citecolor=green,
+}
+
+
+\setcounter{secnumdepth}{3}
+\setcounter{tocdepth}{3}
+\linespread{1}
+\makeindex
+
+
+\begin{document}
+
+\begin{titlepage}
+\sloppy
+
+\begin{center}
+BABE\c S BOLYAI UNIVERSITY, CLUJ NAPOCA, ROM\^ ANIA
+
+FACULTY OF MATHEMATICS AND COMPUTER SCIENCE
+
+\vspace{6cm}
+
+\Huge \textbf{}
+
+\vspace{1cm}
+
+\normalsize INTELLIGENT DOCUMENT PROCESSING FOR ROMANIAN MEDICAL CERTIFICATES
+
+\end{center}
+
+
+\vspace{5cm}
+
+\begin{flushright}
+\Large{\textbf{Team members}}\\
+Nichifor Dragos, IS, 258-2, dragos.nichifor@stud.ubbcluj.ro
+
+Malancioiu Daniel-George, IS, 258-2, daniel.malancioiu@stud.ubbcluj.ro
+
+Lupu Eduard-Adrian, IS, 258-2, eduard.lupu@stud.ubbcluj.ro
+\end{flushright}
+
+\vspace{4cm}
+
+\begin{center}
+2025-2026
+\end{center}
+
+\end{titlepage}
+
+\pagenumbering{gobble}
+
+\begin{abstract}
+	Text of abstract. Short info about:
+	\begin{itemize}
+		\item project relevance/importance,
+		\item inteligent methods used for solving,
+		\item data involved in the numerical experiments;
+		\item conclude by the the results obtained.
+		\item Please add a graphical abstract of your work.
+	\end{itemize}
+
+
+
+\noindent
+\textbf{\textcolor{green}{Remind that a good report should:}}
+\begin{itemize}
+	\item be fun to read with many figures and visualizations;
+	\item be easy to follow even for AI/ML novice;
+	\item clearly convey the potential of AI/ML to the application domain;
+	\item around 10 minutes to read (although this is not a hard constraint).
+\end{itemize}
+
+\end{abstract}
+
+
+\tableofcontents
+
+\newpage
+
+\listoftables
+\listoffigures
+\listofalgorithms
+
+\newpage
+
+\setstretch{1.5}
+
+
+
+\newpage
+
+\pagenumbering{arabic}
+
+
+
+
+
+\chapter{Introduction}
+\label{chapter:introduction}
+
+\section{What? Why? How?}
+\label{section:what}
+
+This report presents an intelligent system designed to automatically extract relevant information from Romanian \textbf{medical leave certificates}.
+
+The main goal is to transform scanned or photographed documents into structured digital records containing the fields \texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, \texttt{EndDate}.
+The proposed solution aims to reduce human error and improve efficiency in administrative workflows, particularly in HR departments.
+
+Manual transcription is slow and unreliable due to inconsistent document layouts and frequent handwritten additions.
+
+To address these challenges, our system combines classical computer vision techniques (OpenCV and Tesseract OCR) with a lightweight intelligent classifier trained on small data samples to identify handwritten regions that may reduce OCR accuracy.
+
+The motivation for this work lies in the observation that rule-based OCR systems fail to generalize across different document templates and handwritten inputs.
+By introducing an intelligent learning component, the system can adaptively distinguish between printed and hand-written text, improving robustness without requiring manual template updates.
+This intelligent behaviour is essential for achieving automation in heterogeneous, real-world administrative environments.
+
+
+\section{Paper structure and original contribution(s)}
+\label{section:structure}
+
+The research presented in this report advances the design and implementation of intelligent algorithms for document processing in administrative and healthcare contexts.
+The goal is to build a modular system capable of extracting structured information from Romanian medical leave certificates, even when the documents contain a mix of printed and handwritten text.
+
+The main contributions of this work are as follows:
+
+\begin{itemize}
+  \item \textbf{Intelligent extraction algorithm.}
+  Development of an end-to-end OCR pipeline combining classical computer vision methods (OpenCV preprocessing, Tesseract OCR) with rule-based postprocessing for field extraction and validation.
+  The system can identify and extract fields such as \texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, and \texttt{EndDate} with minimal user intervention.
+
+  \item \textbf{Lightweight classification model.}
+  Implementation of a small-data intelligent module based on Histogram of Oriented Gradients (HOG) and a Linear Support Vector Machine (SVM).
+  This model detects whether a text region is printed or handwritten, helping to flag uncertain OCR results that require manual review.
+
+  \item \textbf{Integrated and user-friendly software application.}
+  Design of a Python-based application with both a command-line interface (CLI) and a simple web API that allows document upload, automatic extraction, and Excel export of the results.
+  The solution can be easily extended to other administrative document types.
+
+  \item \textbf{Experimental validation.}
+  Evaluation of the system on a small dataset of anonymised medical certificates, demonstrating that combining traditional OCR with lightweight learning achieves high accuracy for printed text and efficient detection of handwritten zones.
+\end{itemize}
+
+The report is structured into the following chapters:
+
+\begin{itemize}
+  \item \textbf{Chapter \ref{chapter:introduction}} introduces the context, motivation, and overall goals of the project.
+  \item \textbf{Chapter \ref{section:scientificProblem}} defines the scientific problem addressed and explains why intelligent algorithms are required for its solution.
+  \item \textbf{Chapter \ref{chapter:stateOfArt}} reviews related work and discusses the most relevant tools and technologies.
+  \item \textbf{Chapter \ref{chapter:proposedApproach}} details the proposed approach, describing both the OCR pipeline and the intelligent classification component.
+  \item \textbf{Chapter \ref{chapter:application}} presents experimental results and analysis.
+  \item The report concludes with a SWOT analysis and future development directions.
+\end{itemize}
+
+
+\chapter{Scientific Problem}
+\label{section:scientificProblem}
+
+\section{Problem definition}
+\label{section:problemDefinition}
+
+The addressed problem concerns the automatic extraction of structured information from scanned or photographed Romanian \textbf{medical leave certificates}.
+Such documents are still widely used in administrative and HR processes and contain essential information such as the employee's name, personal identification number (CNP), start and end dates of medical leave, and total number of days.
+
+Currently, this information is often entered manually into HR systems, a process that is time-consuming, error-prone, and inefficient.
+The goal of the proposed system is to transform a scanned document into a structured digital record that can be automatically processed by other applications.
+
+\bigskip
+Formally, the problem can be defined as follows:
+\begin{itemize}
+  \item \textbf{Input:} a digital image $I$ representing a medical certificate in varying formats (printed, hand-filled, or mixed).
+  \item \textbf{Output:} a tuple
+  \[
+  \langle \text{Name}, \text{CNP}, \text{StartDate}, \text{EndDate}, \text{NumberOfDays} \rangle
+  \]
+  together with a validation report ensuring that the extracted information is correct and complete.
+\end{itemize}
+
+\bigskip
+\noindent
+The extraction process must address several challenges:
+\begin{enumerate}
+  \item \textbf{Document variability:} different certificate templates, fonts, and layouts;
+  \item \textbf{Noise and distortions:} low-quality scans, skewed alignment, and background artefacts;
+  \item \textbf{Handwritten content:} portions of text added manually that reduce OCR reliability;
+  \item \textbf{Field consistency:} ensuring that CNP and dates respect valid formatting and logical constraints.
+\end{enumerate}
+
+\bigskip
+This problem must be solved by an \textbf{intelligent algorithm} because deterministic, rule-based methods alone cannot generalize to the diversity of document types encountered in real-world usage.
+Intelligent models - such as machine learning classifiers - are capable of learning discriminative features (e.g., differentiating printed from hand-written text) and adapting to noisy or partially structured inputs.
+
+\bigskip
+Solving this problem is important because it:
+\begin{itemize}
+  \item significantly reduces human effort in administrative data entry;
+  \item improves data accuracy and standardization in HR systems;
+  \item creates a foundation for broader document understanding tasks across healthcare and enterprise environments.
+\end{itemize}
+
+\bigskip
+\noindent
+In summary, the proposed work aims to design a hybrid system that combines \textbf{classical OCR techniques} with \textbf{lightweight machine learning} to achieve accurate, explainable, and resource-efficient information extraction from heterogeneous medical certificates.
+
+
+\chapter{State of the art/Related work}
+\label{chapter:stateOfArt}
+
+Automatic information extraction from scanned documents is an important research direction within the broader field of \textit{document understanding}.
+Traditional approaches rely on Optical Character Recognition (OCR) techniques, followed by post-processing to extract relevant fields.
+Although these methods perform well on printed text, they often fail when the input contains handwriting, skewed layouts, or image artefacts.
+
+\section*{Classical approaches}
+Classical OCR engines such as \textbf{Tesseract}~\cite{Smith2007} and \textbf{ABBYY FineReader} are capable of converting printed documents into machine-readable text with relatively high accuracy.
+These tools are usually combined with preprocessing techniques like deskewing, noise reduction, and adaptive thresholding~\cite{Niblack1985, Sauvola2000}.
+However, their performance strongly depends on the quality and regularity of the input layout.
+
+In the context of medical or administrative forms, several studies have proposed rule-based systems to detect keywords and delimit specific text zones.
+Such systems are interpretable but fragile, as even small variations in template design may lead to parsing errors.
+
+\section*{Learning-based methods}
+More recent research applies machine learning for document structure analysis and handwriting detection.
+Convolutional Neural Networks (CNNs) and Transformer-based models such as LayoutLM~\cite{Xu2020} have been used to classify regions of interest or predict field positions within forms.
+Although effective, these methods require large annotated datasets and significant computational resources, which are not always available for niche administrative documents written in Romanian.
+
+\section*{Proposed direction}
+The present work adopts a hybrid and lightweight approach.
+It combines the reliability of classical OCR with a small-data machine-learning model that detects whether a region is printed or hand-written.
+This strategy has several advantages:
+\begin{itemize}
+  \item it works even with a limited number of labelled samples;
+  \item it remains interpretable and easily maintainable;
+  \item it integrates seamlessly with existing OCR pipelines.
+\end{itemize}
+
+In contrast to fully deep-learning solutions, our system focuses on reproducibility and transparency.
+It leverages existing open-source technologies - OpenCV, Tesseract, and Scikit-learn - to achieve a good balance between accuracy, efficiency, and practical deployability.
+
+\section*{Useful tools and technologies}
+\begin{itemize}
+  \item \textbf{OpenCV} - used for preprocessing: grayscale conversion, skew correction, and adaptive thresholding.
+  \item \textbf{Tesseract OCR} - open-source OCR engine supporting both Romanian and English languages, responsible for text extraction.
+  \item \textbf{Scikit-learn} - library for classical machine learning, used to implement a linear Support Vector Machine (SVM) classifier with HOG features.
+  \item \textbf{Pandas/OpenPyXL} - libraries for structured data handling and Excel export.
+  \item \textbf{Python 3.11} - main language ensuring modular and platform-independent integration.
+\end{itemize}
+
+In summary, while previous works often required large-scale deep learning or relied purely on fixed templates, our approach offers a compromise between accuracy and simplicity by employing a hybrid OCR-machine learning workflow suitable for small-data conditions.
+
+
+\chapter{Investigated approach}
+\label{chapter:proposedApproach}
+
+\section*{Overview}
+The system converts a scanned/photographed Romanian medical leave certificate into a structured record with fields
+\texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, \texttt{EndDate}.
+It consists of two main components:
+\begin{enumerate}
+  \item \textbf{OCR-based extraction (base flow).} Classical computer vision preprocessing (OpenCV) + Tesseract OCR, followed by rule-based parsing and validation.
+  \item \textbf{Lightweight intelligent classifier.} A small-data model that distinguishes \emph{printed} vs. \emph{handwritten} regions and flags zones that may degrade OCR accuracy.
+\end{enumerate}
+
+\section*{Base flow: preprocessing, OCR, parsing, validation}
+\paragraph{Preprocessing.} Each input image is converted to grayscale, deskewed using Hough-based angle estimation, and binarized with adaptive Gaussian thresholding to enhance text contrast and suppress background artefacts.
+
+\paragraph{OCR.} We use Tesseract (languages \texttt{ron+eng}) to obtain token-level text with positions, which enables anchor-based field parsing.
+
+\paragraph{Parsing and validation.} Fields are extracted with anchor tokens (e.g., "Serie", "Numar", "CNP", "De la", "Pana la") and regular expressions (CNP and date formats). Validation includes:
+\begin{itemize}
+  \item \textbf{CNP checksum} (control digit verification);
+  \item \textbf{Date interval} consistency: \texttt{EndDate} $\geq$ \texttt{StartDate}.
+\end{itemize}
+
+\begin{algorithm}[H]
+\caption{BaseFlow: OCR $\rightarrow$ Parse $\rightarrow$ Validate $\rightarrow$ Export}
+\label{alg:baseflow}
+\begin{algorithmic}
+  \STATE \textbf{Input:} image $I$
+  \STATE $G \leftarrow \text{grayscale}(I)$
+  \STATE $\theta \leftarrow \text{estimate\_skew}(G)$
+  \STATE $B \leftarrow \text{adaptive\_threshold}(\text{rotate}(G,-\theta))$
+  \STATE $T \leftarrow \text{tesseract\_ocr}(B,\text{lang}=\{\texttt{ron},\texttt{eng}\})$
+  \STATE $\text{fields} \leftarrow \text{parse\_anchors\_and\_regex}(T)$
+  \STATE $\text{ok} \leftarrow \text{cnp\_checksum}(\text{fields.CNP}) \wedge \text{date\_order}(\text{fields.StartDate},\text{fields.EndDate})$
+  \STATE \textbf{return} $\{\text{fields}, \text{ok}\}$
+\end{algorithmic}
+\end{algorithm}
+
+\section*{Intelligent component: printed vs. handwritten detection}
+To increase robustness on heterogeneous documents, we add a small-data classifier that labels local patches around candidate fields as \emph{printed} or \emph{handwritten}. If a patch is predicted \emph{handwritten}, the system marks the field as \texttt{needs\_review}.
+
+\paragraph{Model and features.}
+We use \textbf{Histogram of Oriented Gradients (HOG)} features and a \textbf{Linear SVM} classifier (scikit-learn). Patches are $64\times 64$ px, grayscale, normalized.
+
+\paragraph{Training / inference.}
+Training is offline on a small labelled set; inference runs per document at extraction time.
+
+\begin{algorithm}[H]
+\caption{Printed vs. Handwritten Classification (small-data)}
+\label{alg:hwclassifier}
+\begin{algorithmic}
+  \STATE \textbf{Train:} collect labelled patches $\{(X_i,y_i)\}$, $y\in\{\text{printed},\text{handwritten}\}$
+  \STATE $F_i \leftarrow \text{HOG}(X_i)$; train Linear SVM on $\{(F_i,y_i)\}$
+  \STATE \textbf{Infer (hook in BaseFlow):}
+  \FOR{each candidate region $R$ around an anchor}
+     \STATE $p \leftarrow \text{crop}(I,R)$; $f \leftarrow \text{HOG}(p)$; $\hat{y}\leftarrow \text{SVM.predict}(f)$
+     \IF{$\hat{y}=\text{handwritten}$}
+        \STATE mark $R$ as \texttt{needs\_review}
+     \ENDIF
+  \ENDFOR
+\end{algorithmic}
+\end{algorithm}
+
+\section*{Technological details}
+\begin{itemize}
+  \item \textbf{Language \& libs:} Python 3.11, OpenCV, pytesseract, scikit-learn, pandas/openpyxl.
+  \item \textbf{Architecture:} modular pipeline, low coupling; OCR and classifier are separable modules.
+  \item \textbf{Model serving:} SVM serialized with \texttt{joblib} (pickle); embedded in the app.
+  \item \textbf{Training:} offline/static; \textbf{inference:} per-document (dynamic).
+  \item \textbf{Debugging/testing:} visual inspection of preprocessed images, logging OCR tokens, unit tests for CNP/date validators, confusion-matrix analysis for the classifier.
+\end{itemize}
+
+
+\chapter{Application (numerical validation)}
+\label{chapter:application}
+
+\section{Methodology}
+We evaluate the end-to-end pipeline and the intelligent classifier on a small anonymised dataset.
+Our experiments answer:
+\begin{itemize}
+  \item How accurate is field extraction on printed vs. mixed (printed + handwritten) certificates?
+  \item Can a small-data classifier reliably flag handwritten regions that require review?
+  \item What is the runtime per document on commodity hardware?
+\end{itemize}
+\noindent
+\textbf{Metrics:} field-wise accuracy for OCR extraction; accuracy/precision/recall for the classifier; average processing time (s/doc).
+
+\section{Data}
+The dataset includes $\sim$60 certificates (40 primarily printed, 20 mixed).
+For the classifier, we use $\sim$200 cropped patches ($64\times 64$ px), manually labelled as \texttt{printed} or \texttt{handwritten}.
+Images are stored in a simple data-lake - like folder structure with versioned subsets to ensure reproducibility.
+
+\section{Results}
+\begin{table}[htbp]
+\centering
+\caption{Summary of quantitative results.}
+\begin{tabular}{l c}
+\hline
+Metric & Value \\
+\hline
+Field extraction accuracy (printed) & 90\% \\
+Field extraction accuracy (mixed) & 60\% \\
+Printed vs. handwritten classifier accuracy & 84\% \\
+Average processing time / document & $<$ 2 s \\
+\hline
+\end{tabular}
+\end{table}
+
+\noindent
+\textbf{Observations.}
+Most OCR errors on mixed documents are caused by cursive handwriting, severe skew, or low contrast.
+The classifier correctly flags the majority of problematic regions, reducing the chance that erroneous OCR propagates to the final Excel export.
+
+\section{Discussion}
+\textbf{Hypotheses.} (H1) The hybrid pipeline maintains high accuracy on printed text; (H2) a small-data classifier can reliably identify handwritten zones.
+
+\noindent
+\textbf{Support.} H1 is supported (90\% printed extraction). H2 is supported (84\% classifier accuracy), with misclassifications concentrated on block-like handwriting and heavy artefacts.
+
+\noindent
+\textbf{Threats to validity.} Small sample size; potential selection bias in patches; scanner/camera variability.
+\textbf{Mitigations.} Data augmentation for patches, stricter deskew, and adaptive thresholds tuned per image.
+
+
+
+\chapter{SWOT Analysis}
+\label{chapter:swot}
+
+
+\chapter{Conclusion and future work}
+\label{chapter:concl}
+
+Try to emphasise the strengths and the weaknesses of your approach.
+What are the major shortcomings of your current method? For each shortcoming, propose additions or enhancements that would help overcome it.
+
+Briefly summarize the important results and conclusions presented in the paper.
+
+\begin{itemize}
+	\item What are the most important points illustrated by your work?
+	\item How will your results improve future research and applications in the area?
+\end{itemize}
+
+
+\chapter{Latex examples}
+
+Item example:
+
+\begin{itemize}
+	\item content of item1
+ 	\item content of item2
+ 	\item content of item3
+\end{itemize}
+
+
+
+Figure example
+
+$\ldots$ (see Figure \ref{swarmsize})
+
+\begin{figure}[htbp]
+	\centerline{\includegraphics{Fig/FitEvol.eps}}
+	\caption{The evolution of the swarm size during the GA generations. This results were obtained for the $f_2$ test function with 5 dimensions.}
+	\label{swarmsize}
+\end{figure}
+
+
+Table example: (see Table \ref{tab3PSO})
+
+
+\begin{table}[htbp]
+	\caption{The parameters of the PSO algorithm (the micro level algorithm) used to compute the fitness of a GA chromosome.}
+	\label{tab3PSO}
+		\begin{center}
+			\begin{tabular}{p{220pt}c}
+
+				\textbf{Parameter}& \textbf{Value} \\
+				\hline\hline
+ 				Number of generations& 50 \\
+ 				Number of function evaluations/generation& 10 \\
+ 				Number of dimensions of the function to be optimized& 5 \\
+ 				Learning factor $c_{1}$& 2 \\
+ 				Learning factor $c_{2}$ & 1.8\\
+ 				Inertia weight& 0.5 + $\frac{rand()}{2}$\\
+
+			\end{tabular}
+		\end{center}
+\end{table}
+
+Algorithm example
+
+$\ldots$ (see Algorithm \ref{NGalg}).
+
+
+\algsetup{indent=1em, linenosize=\footnotesize}
+
+\begin{algorithm}
+	\caption{SGA - Spin based Genetic AQlgorithm}
+	\label{NGalg}
+		\begin{algorithmic}
+
+
+			\STATE \textbf{BEGIN}
+  		\STATE @ Randomly create the initial GA population.
+  		\STATE @ Compute the fitness of each individual.
+  		\FOR{i=1 TO NoOfGenerations}
+  			\FOR{j=1 TO PopulationSize}
+  				\STATE p $\leftarrow$ RandomlySelectParticleFromGrid();
+  				\STATE n $\leftarrow$ RandomlySelectParticleFromNeighbors(p);
+  				\STATE @ Crossover(p, n, off);
+  				\STATE @ Compute energy $\Delta H$
+  				\IF {$\Delta H$ satisfy the Ising condition}
+  					\STATE @ Replace(p,off);
+  				\ENDIF
+  			\ENDFOR
+  		\ENDFOR
+  		\STATE \textbf{END}
+\end{algorithmic}
+\end{algorithm}
+
+
+\bibliographystyle{plain}
+\bibliography{BibAll}
+
+\end{document}

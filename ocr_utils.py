@@ -1,103 +1,338 @@
-import easyocr
+﻿from __future__ import annotations
+
+import io
+import json
+import re
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple
+
 import cv2
+import easyocr
 import numpy as np
 from PIL import Image
-import io
-import re
 
-# Initialize EasyOCR once (supports Romanian handwriting/print)
-reader = easyocr.Reader(['ro', 'en'], gpu=False)
+# Initialise EasyOCR once (supports Romanian diacritics)
+reader = easyocr.Reader(["ro", "en"], gpu=True)
+
+# Normalised portrait size used after perspective correction
+TARGET_WIDTH = 1400
+TARGET_HEIGHT = 1980
 
 
-def load_image(uploaded_file):
-    """Load an uploaded Streamlit file or PIL image into OpenCV format (BGR)."""
+@dataclass(frozen=True)
+class RoiSpec:
+    name: str
+    top: float
+    left: float
+    bottom: float
+    right: float
+    kind: str = "text"  # text | digits | date | checkbox
+    description: Optional[str] = None
+
+
+# ROI map approximated on an aligned reference certificate.
+ROI_MAP_PATH = Path(__file__).with_name("roi_map.json")
+
+
+def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            raw_map = json.load(handle)
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"ROI map file not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in ROI map file: {path}") from exc
+
+    specs: List[RoiSpec] = []
+    for name, payload in raw_map.items():
+        if not isinstance(payload, dict):
+            kind_name = type(payload).__name__
+            raise ValueError(f"ROI '{name}' must be an object, got {kind_name}.")
+
+        coords = payload.get("roi")
+        if not (isinstance(coords, list) and len(coords) == 4):
+            raise ValueError(f"ROI '{name}' must define 'roi' as a list of four numbers.")
+
+        top, left, bottom, right = coords
+        specs.append(
+            RoiSpec(
+                name=name,
+                top=float(top),
+                left=float(left),
+                bottom=float(bottom),
+                right=float(right),
+                kind=payload.get("kind", "text"),
+                description=payload.get("description"),
+            )
+        )
+
+    return specs
+
+
+try:
+    ROI_SPECS: List[RoiSpec] = _load_roi_specs()
+except Exception as exc:
+    raise RuntimeError(f"Failed to load ROI specifications from '{ROI_MAP_PATH}': {exc}") from exc
+
+
+MONTH_MAP = {
+    "ian": "ianuarie",
+    "feb": "februarie",
+    "mar": "martie",
+    "apr": "aprilie",
+    "mai": "mai",
+    "iun": "iunie",
+    "iul": "iulie",
+    "aug": "august",
+    "sep": "septembrie",
+    "oct": "octombrie",
+    "noi": "noiembrie",
+    "dec": "decembrie",
+}
+
+
+def load_image(uploaded_file) -> np.ndarray:
+    """Load bytes/PIL image into OpenCV BGR array."""
     if hasattr(uploaded_file, "read"):
         uploaded_file.seek(0)
-        image = Image.open(io.BytesIO(uploaded_file.read()))
+        data = uploaded_file.read()
+        image = Image.open(io.BytesIO(data))
     else:
         image = uploaded_file
     return cv2.cvtColor(np.array(image.convert("RGB")), cv2.COLOR_RGB2BGR)
 
 
-def preprocess(img):
-    """Improve contrast and sharpness for OCR."""
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.convertScaleAbs(gray, alpha=1.6, beta=15)
-    gray = cv2.medianBlur(gray, 3)
+def order_points(pts: np.ndarray) -> np.ndarray:
+    """Order points as (tl, tr, br, bl)."""
+    rect = np.zeros((4, 2), dtype="float32")
+    s = pts.sum(axis=1)
+    rect[0] = pts[np.argmin(s)]
+    rect[2] = pts[np.argmax(s)]
+
+    diff = np.diff(pts, axis=1)
+    rect[1] = pts[np.argmin(diff)]
+    rect[3] = pts[np.argmax(diff)]
+    return rect
+
+
+def align_certificate(image: np.ndarray) -> Tuple[np.ndarray, bool]:
+    """Attempt to warp the document to a canonical portrait frame."""
+    try:
+        ratio = 1000.0 / max(image.shape[:2])
+        resized = cv2.resize(image, None, fx=ratio, fy=ratio, interpolation=cv2.INTER_AREA)
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (5, 5), 0)
+        edges = cv2.Canny(gray, 60, 180)
+        edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=2)
+
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)
+
+        for contour in contours[:5]:
+            peri = cv2.arcLength(contour, True)
+            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+            if len(approx) == 4:
+                pts = approx.reshape(4, 2).astype("float32") / ratio
+                ordered = order_points(pts)
+                target = np.array(
+                    [
+                        [0, 0],
+                        [TARGET_WIDTH - 1, 0],
+                        [TARGET_WIDTH - 1, TARGET_HEIGHT - 1],
+                        [0, TARGET_HEIGHT - 1],
+                    ],
+                    dtype="float32",
+                )
+                matrix = cv2.getPerspectiveTransform(ordered, target)
+                warped = cv2.warpPerspective(image, matrix, (TARGET_WIDTH, TARGET_HEIGHT))
+                return warped, True
+    except Exception:
+        pass
+
+    fallback = cv2.resize(image, (TARGET_WIDTH, TARGET_HEIGHT), interpolation=cv2.INTER_CUBIC)
+    return fallback, False
+
+
+def preprocess_for_ocr(image: np.ndarray) -> np.ndarray:
+    """Enhance contrast and smooth noise."""
+    lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+    l_channel, a_channel, b_channel = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    l_channel = clahe.apply(l_channel)
+    merged = cv2.merge([l_channel, a_channel, b_channel])
+    enhanced = cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+
+    gray = cv2.cvtColor(enhanced, cv2.COLOR_BGR2GRAY)
+    gray = cv2.bilateralFilter(gray, 5, 35, 35)
     return gray
 
 
-def find_anchor(img, anchor_text="CERTIFICAT DE CONCEDIU MEDICAL"):
-    """Locate anchor text and return its center coordinates."""
-    results = reader.readtext(img, detail=1, paragraph=False)
-    for (bbox, text, conf) in results:
-        if anchor_text.lower() in text.lower() and conf > 0.5:
-            pts = np.array(bbox).astype(int)
-            x_min, y_min = pts[:, 0].min(), pts[:, 1].min()
-            x_max, y_max = pts[:, 0].max(), pts[:, 1].max()
-            cx, cy = int((x_min + x_max) / 2), int((y_min + y_max) / 2)
-            return (cx, cy)
-    return None
+def roi_to_pixels(roi: RoiSpec, height: int, width: int) -> Tuple[int, int, int, int]:
+    y1 = max(0, int(roi.top * height))
+    y2 = min(height, int(roi.bottom * height))
+    x1 = max(0, int(roi.left * width))
+    x2 = min(width, int(roi.right * width))
+    return y1, y2, x1, x2
 
 
-def extract_text_zone(img, y1, y2, x1, x2):
-    """Extract text from a given ROI."""
-    crop = img[y1:y2, x1:x2]
-    result = reader.readtext(crop, detail=0, paragraph=True)
-    return " ".join(result).strip()
+def remove_grid_lines(image: np.ndarray) -> np.ndarray:
+    """Strip thin grid lines that confuse OCR when numbers sit inside little boxes."""
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
+    vertical = cv2.erode(image, vertical_kernel, iterations=1)
+    vertical = cv2.dilate(vertical, vertical_kernel, iterations=1)
+
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
+    horizontal = cv2.erode(image, horizontal_kernel, iterations=1)
+    horizontal = cv2.dilate(horizontal, horizontal_kernel, iterations=1)
+
+    cleaned = cv2.subtract(image, vertical)
+    cleaned = cv2.subtract(cleaned, horizontal)
+    cleaned = cv2.normalize(cleaned, None, 0, 255, cv2.NORM_MINMAX)
+    return cleaned
 
 
-def extract_fields(uploaded_file, preview=False):
-    """Extract key fields from the medical certificate."""
-    img = preprocess(load_image(uploaded_file))
-    h, w = img.shape[:2]
+def upscale(image: np.ndarray, factor: float = 2.0) -> np.ndarray:
+    return cv2.resize(image, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
 
-    # Base coordinates relative to image size
-    base_rois = {
-        "serie_numar": (int(0.09*h), int(0.60*w), int(0.13*h), int(0.95*w)),
-        "nume":        (int(0.26*h), int(0.20*w), int(0.30*h), int(0.95*w)),
-        "cnp":         (int(0.31*h), int(0.20*w), int(0.35*h), int(0.95*w)),
-        "de_la":       (int(0.53*h), int(0.38*w), int(0.57*h), int(0.48*w)),
-        "pana_la":     (int(0.53*h), int(0.50*w), int(0.57*h), int(0.63*w)),
-        "cod_diag":    (int(0.53*h), int(0.66*w), int(0.57*h), int(0.83*w))
-    }
 
-    # Find anchor
-    anchor = find_anchor(img)
-    y_shift = 0
-    if anchor:
-        expected_anchor_y = int(0.10 * h)
-        y_shift = anchor[1] - expected_anchor_y
-        print(f"✅ Anchor detected, shifting {y_shift}px")
+def run_easyocr(image: np.ndarray, allowlist: Optional[str]=None) -> str:
+    if image.size == 0:
+        return ""
+    rgb = cv2.cvtColor(image if len(image.shape)==3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
+    lines = reader.readtext(rgb, detail=0, paragraph=True, allowlist=allowlist)
+    return " ".join(lines).strip()
 
-    # Adjust ROIs based on anchor position
-    rois = {}
-    for k, (y1, x1, y2, x2) in base_rois.items():
-        rois[k] = (max(0, y1 - y_shift), x1, min(h, y2 - y_shift), x2)
 
-    # Extract text for each ROI
-    data = {}
-    for key, (y1, x1, y2, x2) in rois.items():
-        data[key] = extract_text_zone(img, y1, y2, x1, x2)
-        if preview:
-            cv2.rectangle(img, (x1, y1), (x2, y2), (0, 255, 0), 2)
-            cv2.putText(img, key, (x1, max(10, y1 - 5)),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+def extract_digits(image: np.ndarray) -> str:
+    if image.size == 0:
+        return ""
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    binary = cv2.adaptiveThreshold(
+        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 11
+    )
+    cleaned = remove_grid_lines(binary)
+    inverted = cv2.bitwise_not(cleaned)
+    text = run_easyocr(upscale(inverted), allowlist="0123456789")
+    digits = re.sub(r"[^0-9]", "", text)
+    return digits
+
+
+def parse_date(raw: str) -> str:
+    digits = re.sub(r"[^0-9]", "", raw)
+    if len(digits) >= 8:
+        dd, mm, yyyy = digits[:2], digits[2:4], digits[4:8]
+        return f"{dd}.{mm}.{yyyy}"
+    if len(digits) == 6:
+        dd, mm, yy = digits[:2], digits[2:4], digits[4:6]
+        prefix = "20" if int(yy) < 50 else "19"
+        return f"{dd}.{mm}.{prefix}{yy}"
+    return raw.strip()
+
+
+def normalise_month(raw: str) -> str:
+    text = raw.lower()
+    text = (
+        text.replace("Äƒ", "a")
+        .replace("Ã¢", "a")
+        .replace("Ã®", "i")
+        .replace("È™", "s")
+        .replace("Å£", "t")
+        .replace("È›", "t")
+    )
+    for key, value in MONTH_MAP.items():
+        if key in text:
+            return value
+    cleaned = re.sub(r"[^a-z]", " ", text).strip()
+    return cleaned
+
+
+def detect_checkbox(image: np.ndarray) -> str:
+    if image.size == 0:
+        return "nu"
+    if len(image.shape) == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    fill_ratio = binary.sum() / (255 * binary.size)
+    return "da" if fill_ratio > 0.12 else "nu"
+
+
+def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray) -> str:
+    height, width = gray_img.shape[:2]
+    y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
+    crop_color = color_img[y1:y2, x1:x2]
+    crop_gray = gray_img[y1:y2, x1:x2]
+
+    if roi.kind == "digits":
+        value = extract_digits(crop_color)
+    elif roi.kind == "date":
+        value = parse_date(extract_digits(crop_color))
+    elif roi.kind == "checkbox":
+        value = detect_checkbox(crop_color)
+    else:
+        value = run_easyocr(upscale(crop_gray))
+
+    if roi.name in {"luna", "luna_valabil_in_litere"}:
+        value = normalise_month(value)
+    return value.strip()
+
+
+def extract_header_fields(ocr_results: Iterable[Tuple[List[List[int]], str, float]]) -> Dict[str, str]:
+    serie = ""
+    numar = ""
+    for _bbox, text, _conf in ocr_results:
+        lowered = text.lower()
+        if "certificat de concediu medical" in lowered:
+            serie_match = re.search(r"Seria\s+([A-Z0-9]+)", text, re.IGNORECASE)
+            numar_match = re.search(r"Nr[:\s]*([0-9]{5,8})", text, re.IGNORECASE)
+            if serie_match:
+                serie = serie_match.group(1)
+            if numar_match:
+                numar = numar_match.group(1)
+            break
+    return {"serie": serie, "numar": numar}
+
+
+def extract_fields(uploaded_file, preview: bool = False):
+    """Return structured values and optional ROI preview overlay."""
+    original = load_image(uploaded_file)
+    aligned, warped = align_certificate(original)
+    if not warped:
+        aligned = cv2.resize(original, (TARGET_WIDTH, TARGET_HEIGHT), interpolation=cv2.INTER_CUBIC)
+
+    gray = preprocess_for_ocr(aligned)
+
+    preview_img = aligned.copy()
+    full_text = reader.readtext(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB), detail=1, paragraph=False)
+
+    extracted = extract_header_fields(full_text)
+    for roi in ROI_SPECS:
+        extracted[roi.name] = extract_roi_value(roi, aligned, gray)
 
     if preview:
-        return img, rois
+        height, width = gray.shape[:2]
+        for roi in ROI_SPECS:
+            y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
+            cv2.rectangle(preview_img, (x1, y1), (x2, y2), (0, 200, 0), 2)
+            cv2.putText(
+                preview_img,
+                roi.name,
+                (x1, max(18, y1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (0, 200, 0),
+                1,
+                cv2.LINE_AA,
+            )
+        return preview_img, extracted
 
-    # Regex cleanup
-    serie = re.search(r"CCM[A-Z]*", data["serie_numar"])
-    numar = re.search(r"\b\d{5,8}\b", data["serie_numar"])
-    cnp = re.search(r"\b\d{13}\b", data["cnp"])
+    return extracted
 
-    return {
-        "serie": serie.group(0) if serie else "N/A",
-        "numar": numar.group(0) if numar else "N/A",
-        "nume_pacient": data.get("nume", ""),
-        "cnp": cnp.group(0) if cnp else "N/A",
-        "data_de_la": data.get("de_la", ""),
-        "data_pana_la": data.get("pana_la", ""),
-        "cod_diagnostic": data.get("cod_diag", "")
-    }
