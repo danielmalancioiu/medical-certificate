@@ -37,7 +37,7 @@ ROI_MAP_PATH = Path(__file__).with_name("roi_map.json")
 
 def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
     try:
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8-sig") as handle:
             raw_map = json.load(handle)
     except FileNotFoundError as exc:
         raise FileNotFoundError(f"ROI map file not found: {path}") from exc

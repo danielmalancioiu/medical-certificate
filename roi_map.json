@@ -1,230 +1,230 @@
 ﻿{
   "valabil_pentru_luna": {
     "roi": [
-      0.062515,
-      0.0829,
-      0.073124,
-      0.110505
+      0.155308,
+      0.206512,
+      0.181662,
+      0.27528
     ],
     "kind": "text",
     "description": "Valabil pentru luna (litere)"
   },
   "valabil_pentru_luna2": {
     "roi": [
-      0.061242,
-      0.111105,
-      0.072911,
-      0.163015
+      0.152146,
+      0.276775,
+      0.181135,
+      0.406088
     ],
     "kind": "text",
     "description": "Valabil pentru luna (camp vecin)"
   },
   "anu": {
     "roi": [
-      0.062728,
-      0.18582,
-      0.072275,
-      0.210424
+      0.155835,
+      0.462896,
+      0.179554,
+      0.524189
     ],
     "kind": "digits",
     "description": "Anul (numeric)"
   },
   "cod_indemnizatie": {
     "roi": [
-      0.062091,
-      0.298341,
-      0.073336,
-      0.323846
+      0.154254,
+      0.743199,
+      0.182189,
+      0.806734
     ],
     "kind": "digits",
     "description": "Cod indemnizatie (1-17)"
   },
   "cnp": {
     "roi": [
-      0.08939,
-      0.11039,
-      0.098624,
-      0.238137
+      0.222072,
+      0.274994,
+      0.245013,
+      0.593223
     ],
     "kind": "digits",
     "description": "CNP titular"
   },
   "initial": {
     "roi": [
-      0.008026,
-      0.310815,
-      0.0169,
-      0.32613
+      0.019939,
+      0.774271,
+      0.041984,
+      0.812423
     ],
     "kind": "checkbox",
     "description": "Bifa certificat initial"
   },
   "in_continuare": {
     "roi": [
-      0.0172,
-      0.31124,
-      0.025773,
-      0.326981
+      0.042731,
+      0.775331,
+      0.064029,
+      0.814542
     ],
     "kind": "checkbox",
     "description": "Bifa certificat in continuare"
   },
   "nrinreg": {
     "roi": [
-      0.135875,
-      0.057604,
-      0.145292,
-      0.109493
+      0.337556,
+      0.143497,
+      0.360952,
+      0.272759
     ],
     "kind": "text",
     "description": "Numar inregistrare"
   },
   "dataacordarii": {
     "roi": [
-      0.146273,
-      0.112823,
-      0.156868,
-      0.171372
+      0.36339,
+      0.281054,
+      0.389711,
+      0.426906
     ],
     "kind": "date",
     "description": "Data acordarii"
   },
   "nrzile": {
     "roi": [
-      0.145685,
-      0.173315,
-      0.156868,
-      0.191629
+      0.361927,
+      0.431745,
+      0.389711,
+      0.477367
     ],
     "kind": "digits",
     "description": "Numar zile"
   },
   "dela": {
     "roi": [
-      0.146077,
-      0.194126,
-      0.156084,
-      0.252953
+      0.362902,
+      0.483588,
+      0.387761,
+      0.630131
     ],
     "kind": "date",
     "description": "De la (data inceput)"
   },
   "panala": {
     "roi": [
-      0.14571,
-      0.253965,
-      0.156886,
-      0.311186
+      0.361989,
+      0.632652,
+      0.389755,
+      0.775196
     ],
     "kind": "date",
     "description": "Pana la (data sfarsit)"
   },
   "coddiagnostic": {
     "roi": [
-      0.146157,
-      0.312134,
-      0.155769,
-      0.36082
+      0.3631,
+      0.777559,
+      0.386979,
+      0.898839
     ],
     "kind": "text",
     "description": "Cod diagnostic"
   },
   "adult": {
     "roi": [
-      0.145899,
-      0.361835,
-      0.155461,
-      0.372481
+      0.36246,
+      0.901369,
+      0.386214,
+      0.927888
     ],
     "kind": "checkbox",
     "description": "Bifa adult"
   },
   "cui": {
     "roi": [
-      0.199403,
-      0.021756,
-      0.207744,
-      0.148638
+      0.495379,
+      0.054196,
+      0.516101,
+      0.370273
     ],
     "kind": "text",
     "description": "CUI unitate"
   },
   "codparafa": {
     "roi": [
-      0.199859,
-      0.175553,
-      0.207703,
-      0.234087
+      0.496513,
+      0.43732,
+      0.516,
+      0.583136
     ],
     "kind": "digits",
     "description": "Cod parafa medic"
   },
   "codparafamedicsef": {
     "roi": [
-      0.199525,
-      0.301355,
-      0.20787,
-      0.360834
+      0.495684,
+      0.750706,
+      0.516414,
+      0.898874
     ],
     "kind": "digits",
     "description": "Cod parafa medic sef"
   },
   "urgentamedico": {
     "roi": [
-      0.008673,
-      0.212919,
-      0.016207,
-      0.242899
+      0.021545,
+      0.530402,
+      0.040263,
+      0.605086
     ],
     "kind": "digits",
     "description": "Cod urgenta medico-chirurgicala"
   },
   "cnpcopil": {
     "roi": [
-      0.099341,
-      0.167767,
-      0.107304,
-      0.297277
+      0.246794,
+      0.417925,
+      0.266576,
+      0.740547
     ],
     "kind": "digits",
     "description": "CNP copil/pacient"
   },
   "dataprimirii": {
     "roi": [
-      0.381299,
-      0.311997,
-      0.391243,
-      0.366034
+      0.947266,
+      0.777218,
+      0.971971,
+      0.911828
     ],
     "kind": "date",
     "description": "Data primirii"
   },
   "serieccmat": {
     "roi": [
-      0.051824,
-      0.317549,
-      0.062553,
-      0.375657
+      0.128747,
+      0.791047,
+      0.155402,
+      0.9358
     ],
     "kind": "text",
     "description": "Serie CCMAT"
   },
   "asiguratlacas": {
     "roi": [
-      0.073806,
-      0.112137,
-      0.081657,
-      0.237235
+      0.183358,
+      0.279344,
+      0.202862,
+      0.590976
     ],
     "kind": "text",
     "description": "Asigurat la CAS"
   },
   "casemitenta": {
     "roi": [
-      0.209888,
-      0.072535,
-      0.221141,
-      0.145447
+      0.521428,
+      0.180692,
+      0.549384,
+      0.362323
     ],
     "kind": "text",
     "description": "Casa emitenta"
