@@ -1,4 +1,7 @@
-﻿import cv2
+import io
+
+import cv2
+import pandas as pd
 import streamlit as st
 
 from ocr_utils import extract_fields
@@ -14,6 +17,7 @@ LANGUAGE_OPTIONS = {
         "preview_caption": "Detected OCR zones",
         "success": "Extraction complete.",
         "results_header": "OCR Results",
+        "download_label": "Download results as Excel",
     },
     "Romana": {
         "title": "CNAS Medical-Certificates DDE",
@@ -23,6 +27,7 @@ LANGUAGE_OPTIONS = {
         "preview_caption": "Zone OCR identificate",
         "success": "Extractie finalizata.",
         "results_header": "Rezultate OCR",
+        "download_label": "Descarca rezultatele in Excel",
     },
 }
 
@@ -47,3 +52,18 @@ if uploaded_file:
     st.success(texts["success"])
     st.subheader(texts["results_header"])
     st.json(extracted)
+
+    results_df = pd.DataFrame([extracted])
+    st.dataframe(results_df, use_container_width=True)
+
+    excel_buffer = io.BytesIO()
+    with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+        results_df.to_excel(writer, index=False, sheet_name="OCR")
+    excel_buffer.seek(0)
+
+    st.download_button(
+        label=texts["download_label"],
+        data=excel_buffer.getvalue(),
+        file_name="ocr_results.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )

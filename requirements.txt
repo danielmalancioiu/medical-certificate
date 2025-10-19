@@ -3,3 +3,4 @@ easyocr
 opencv-python-headless
 pillow
 numpy
+openpyxl
