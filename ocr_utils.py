@@ -177,18 +177,29 @@ def roi_to_pixels(roi: RoiSpec, height: int, width: int) -> Tuple[int, int, int,
 
 
 def remove_grid_lines(image: np.ndarray) -> np.ndarray:
-    """Strip thin grid lines that confuse OCR when numbers sit inside little boxes."""
-    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
-    vertical = cv2.erode(image, vertical_kernel, iterations=1)
-    vertical = cv2.dilate(vertical, vertical_kernel, iterations=1)
+    """Suppress long ruling lines without erasing handwritten strokes."""
+    if image.size == 0:
+        return image
 
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
-    horizontal = cv2.erode(image, horizontal_kernel, iterations=1)
-    horizontal = cv2.dilate(horizontal, horizontal_kernel, iterations=1)
+    if image.ndim == 3:
+        work = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        work = image.copy()
 
-    cleaned = cv2.subtract(image, vertical)
-    cleaned = cv2.subtract(cleaned, horizontal)
-    cleaned = cv2.normalize(cleaned, None, 0, 255, cv2.NORM_MINMAX)
+    height, width = work.shape[:2]
+    vertical_kernel_len = min(height, max(3, int(round(height * 0.9))))
+    horizontal_kernel_len = min(width, max(3, int(round(width * 0.9))))
+
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, vertical_kernel_len))
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (horizontal_kernel_len, 1))
+
+    vertical_lines = cv2.morphologyEx(work, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+    horizontal_lines = cv2.morphologyEx(work, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
+
+    lines = cv2.bitwise_or(vertical_lines, horizontal_lines)
+    cleaned = cv2.subtract(work, lines)
+    cleaned = cv2.medianBlur(cleaned, 3)
+    _, cleaned = cv2.threshold(cleaned, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cleaned
 
 
@@ -211,17 +222,26 @@ def extract_digits(image: np.ndarray) -> str:
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
-        gray = image
+        gray = image.copy()
 
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    primary_text = run_easyocr(upscale(gray), allowlist="0123456789")
+    digits = re.sub(r"[^0-9]", "", primary_text)
+    if digits:
+        return digits
+
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
     binary = cv2.adaptiveThreshold(
-        gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 11
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 11
     )
     cleaned = remove_grid_lines(binary)
     inverted = cv2.bitwise_not(cleaned)
-    text = run_easyocr(upscale(inverted), allowlist="0123456789")
-    digits = re.sub(r"[^0-9]", "", text)
-    return digits
+    secondary_text = run_easyocr(upscale(inverted), allowlist="0123456789")
+    digits = re.sub(r"[^0-9]", "", secondary_text)
+    if digits:
+        return digits
+
+    fallback_text = run_easyocr(upscale(cv2.bitwise_not(binary)), allowlist="0123456789")
+    return re.sub(r"[^0-9]", "", fallback_text)
 
 
 def parse_date(raw: str) -> str:
