@@ -136,7 +136,7 @@
       0.516101,
       0.370273
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "CUI unitate (cod unic inregistrare)"
   },
   "cod_parafa_medic": {

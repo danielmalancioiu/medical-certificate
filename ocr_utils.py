@@ -157,6 +157,25 @@ def roi_to_pixels(roi: RoiSpec, height: int, width: int) -> Tuple[int, int, int,
     return y1, y2, x1, x2
 
 
+def shrink_crop(image: np.ndarray, margin_ratio: float) -> np.ndarray:
+    """Trim uniform margins to reduce the impact of printed borders/guidelines."""
+    if image.size == 0 or margin_ratio <= 0:
+        return image
+
+    height, width = image.shape[:2]
+    margin_y = min(height // 2, max(0, int(round(height * margin_ratio))))
+    margin_x = min(width // 2, max(0, int(round(width * margin_ratio))))
+
+    top = margin_y
+    bottom = height - margin_y
+    left = margin_x
+    right = width - margin_x
+
+    if bottom <= top or right <= left:
+        return image
+    return image[top:bottom, left:right]
+
+
 def remove_grid_lines(image: np.ndarray) -> np.ndarray:
     """Suppress long ruling lines without erasing handwritten strokes."""
     if image.size == 0:
@@ -182,6 +201,57 @@ def remove_grid_lines(image: np.ndarray) -> np.ndarray:
     cleaned = cv2.medianBlur(cleaned, 3)
     _, cleaned = cv2.threshold(cleaned, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return cleaned
+
+
+def suppress_guidelines(image: np.ndarray) -> np.ndarray:
+    """Remove contiguous and dotted guide lines using inpainting."""
+    if image.size == 0:
+        return image
+
+    if image.ndim == 2:
+        gray = image
+        color = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        return_gray = True
+    else:
+        color = image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return_gray = False
+
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    binary = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        25,
+        7,
+    )
+
+    height, width = gray.shape[:2]
+    horizontal_len = max(8, width // 6)
+    vertical_len = max(8, height // 6)
+
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (horizontal_len, 1))
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, vertical_len))
+
+    dotted_h_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 1))
+    dotted_v_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 5))
+
+    horizontal = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, dotted_h_kernel, iterations=1)
+    horizontal = cv2.morphologyEx(horizontal, cv2.MORPH_OPEN, horizontal_kernel, iterations=1)
+
+    vertical = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, dotted_v_kernel, iterations=1)
+    vertical = cv2.morphologyEx(vertical, cv2.MORPH_OPEN, vertical_kernel, iterations=1)
+
+    line_mask = cv2.bitwise_or(horizontal, vertical)
+    if not np.any(line_mask):
+        return gray if return_gray else color
+
+    mask = cv2.dilate(line_mask, np.ones((3, 3), np.uint8), iterations=1)
+    inpainted = cv2.inpaint(color, mask, 3, cv2.INPAINT_TELEA)
+    if return_gray:
+        return cv2.cvtColor(inpainted, cv2.COLOR_BGR2GRAY)
+    return inpainted
 
 
 def upscale(image: np.ndarray, factor: float = 2.0) -> np.ndarray:
@@ -217,12 +287,69 @@ def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
     return enhanced
 
 
+def emphasize_dark_ink(image: np.ndarray) -> np.ndarray:
+    """Boost contrast for darker handwriting regardless of ink colour."""
+    if image.size == 0:
+        return image
+
+    if image.ndim == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image.copy()
+
+    clahe = cv2.createCLAHE(clipLimit=2.4, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    enhanced = cv2.medianBlur(enhanced, 3)
+    return enhanced
+
+
+def tidy_text(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
 def run_easyocr(image: np.ndarray, allowlist: Optional[str]=None) -> str:
     if image.size == 0:
         return ""
     rgb = cv2.cvtColor(image if len(image.shape)==3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
     lines = reader.readtext(rgb, detail=0, paragraph=True, allowlist=allowlist)
     return " ".join(lines).strip()
+
+
+def read_text_with_confidence(
+    image: np.ndarray,
+    allowlist: Optional[str] = None,
+    min_confidence: float = 0.35,
+) -> Tuple[str, float]:
+    """OCR with confidences, returning text that meets a threshold."""
+    if image.size == 0:
+        return "", 0.0
+
+    if image.ndim == 2:
+        rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    else:
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    results = reader.readtext(rgb, detail=1, paragraph=False, allowlist=allowlist)
+
+    accepted: List[str] = []
+    fallback: List[str] = []
+    best_confidence = 0.0
+    for _bbox, text, confidence in results:
+        if not text:
+            continue
+        cleaned = re.sub(r"\s+", " ", text.strip())
+        if not cleaned:
+            continue
+        best_confidence = max(best_confidence, float(confidence))
+        fallback.append(cleaned)
+        if confidence >= min_confidence:
+            accepted.append(cleaned)
+
+    if accepted:
+        return " ".join(accepted), best_confidence
+    if fallback and best_confidence >= max(0.01, min_confidence * 0.7):
+        return " ".join(fallback), best_confidence
+    return "", best_confidence
 
 
 def read_digits_with_confidence(
@@ -272,8 +399,16 @@ def extract_digits(image: np.ndarray) -> str:
         gray = image.copy()
         color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
+    guide_suppressed = suppress_guidelines(color)
+    if guide_suppressed.ndim == 3:
+        guide_gray = cv2.cvtColor(guide_suppressed, cv2.COLOR_BGR2GRAY)
+    else:
+        guide_gray = guide_suppressed
+        guide_suppressed = cv2.cvtColor(guide_gray, cv2.COLOR_GRAY2BGR)
+
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
+    guide_clahe = clahe.apply(guide_gray)
 
     blue_enhanced = emphasize_blue_ink(color)
     blue_blur = cv2.GaussianBlur(blue_enhanced, (3, 3), 0)
@@ -287,10 +422,25 @@ def extract_digits(image: np.ndarray) -> str:
     )
     binary_clean = remove_grid_lines(blue_binary)
 
+    guide_blue = emphasize_blue_ink(guide_suppressed)
+    guide_blur = cv2.GaussianBlur(guide_gray, (3, 3), 0)
+    guide_binary = cv2.adaptiveThreshold(
+        guide_blur,
+        255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        21,
+        7,
+    )
+    guide_binary_clean = remove_grid_lines(guide_binary)
+
     ink_ratio = float(cv2.countNonZero(blue_binary)) / float(blue_binary.size)
     peak_intensity = cv2.minMaxLoc(blue_enhanced)[1] if blue_enhanced.size else 0
     if ink_ratio < 0.0008 and peak_intensity < 80:
-        return ""
+        guide_ratio = float(cv2.countNonZero(guide_binary)) / float(guide_binary.size)
+        guide_peak = cv2.minMaxLoc(guide_blue)[1] if guide_blue.size else 0
+        if guide_ratio < 0.0008 and guide_peak < 80:
+            return ""
 
     digits_allowlist = "0123456789"
     candidates = [
@@ -302,6 +452,14 @@ def extract_digits(image: np.ndarray) -> str:
         {"image": cv2.bitwise_not(blue_binary), "scale": 3.0},
         {"image": binary_clean, "scale": 3.0},
         {"image": cv2.bitwise_not(binary_clean), "scale": 3.0},
+        {"image": guide_gray, "scale": 2.4},
+        {"image": guide_clahe, "scale": 2.6},
+        {"image": guide_suppressed, "scale": 2.2},
+        {"image": guide_blue, "scale": 3.0},
+        {"image": guide_binary, "scale": 3.0},
+        {"image": cv2.bitwise_not(guide_binary), "scale": 3.0},
+        {"image": guide_binary_clean, "scale": 3.2},
+        {"image": cv2.bitwise_not(guide_binary_clean), "scale": 3.2},
     ]
 
     best_digits = ""
@@ -352,44 +510,230 @@ def extract_digits(image: np.ndarray) -> str:
     return best_digits if best_confidence > 0 else ""
 
 
+def extract_text(image: np.ndarray) -> str:
+    if image.size == 0:
+        return ""
+
+    if image.ndim == 3:
+        color = image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image.copy()
+        color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    guide_suppressed = suppress_guidelines(color)
+    if guide_suppressed.ndim == 3:
+        guide_gray = cv2.cvtColor(guide_suppressed, cv2.COLOR_BGR2GRAY)
+    else:
+        guide_gray = guide_suppressed
+        guide_suppressed = cv2.cvtColor(guide_gray, cv2.COLOR_GRAY2BGR)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+    guide_clahe = clahe.apply(guide_gray)
+    dark_enhanced = emphasize_dark_ink(color)
+    blue_enhanced = emphasize_blue_ink(color)
+    guide_dark = emphasize_dark_ink(guide_suppressed)
+    guide_blue = emphasize_blue_ink(guide_suppressed)
+
+    blurred = cv2.GaussianBlur(gray_clahe, (3, 3), 0)
+    adaptive = cv2.adaptiveThreshold(
+        blurred,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        35,
+        9,
+    )
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    closed = cv2.morphologyEx(adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
+    cleaned_grid = remove_grid_lines(adaptive)
+
+    guide_blur = cv2.GaussianBlur(guide_clahe, (3, 3), 0)
+    guide_adaptive = cv2.adaptiveThreshold(
+        guide_blur,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        9,
+    )
+    guide_closed = cv2.morphologyEx(guide_adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
+    guide_clean = remove_grid_lines(guide_adaptive)
+
+    text_allowlist = (
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz-_/.,"
+    )
+
+    candidates = [
+        {"image": gray, "scale": 2.0, "min_conf": 0.38, "allowlist": None},
+        {"image": gray_clahe, "scale": 2.2, "min_conf": 0.4, "allowlist": None},
+        {"image": dark_enhanced, "scale": 2.3, "min_conf": 0.4, "allowlist": None},
+        {"image": cv2.bitwise_not(adaptive), "scale": 2.6, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": adaptive, "scale": 2.6, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(closed), "scale": 2.8, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": closed, "scale": 2.8, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(cleaned_grid), "scale": 2.8, "min_conf": 0.42, "allowlist": text_allowlist},
+        {"image": cleaned_grid, "scale": 2.8, "min_conf": 0.42, "allowlist": text_allowlist},
+        {"image": guide_gray, "scale": 2.2, "min_conf": 0.38, "allowlist": None},
+        {"image": guide_clahe, "scale": 2.4, "min_conf": 0.4, "allowlist": None},
+        {"image": guide_dark, "scale": 2.5, "min_conf": 0.4, "allowlist": None},
+        {"image": guide_blue, "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": guide_adaptive, "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(guide_adaptive), "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
+        {"image": guide_closed, "scale": 2.9, "min_conf": 0.46, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(guide_closed), "scale": 2.9, "min_conf": 0.46, "allowlist": text_allowlist},
+        {"image": guide_clean, "scale": 2.9, "min_conf": 0.44, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(guide_clean), "scale": 2.9, "min_conf": 0.44, "allowlist": text_allowlist},
+    ]
+
+    if np.count_nonzero(blue_enhanced) > 0:
+        candidates.append(
+            {"image": blue_enhanced, "scale": 2.7, "min_conf": 0.46, "allowlist": text_allowlist}
+        )
+        candidates.append(
+            {"image": cv2.bitwise_not(blue_enhanced), "scale": 2.7, "min_conf": 0.46, "allowlist": text_allowlist}
+        )
+
+    best_text = ""
+    best_confidence = 0.0
+
+    for candidate in candidates:
+        candidate_image = candidate["image"]
+        factor = candidate.get("scale", 2.0)
+        min_conf = candidate.get("min_conf", 0.35)
+        allowlist = candidate.get("allowlist")
+        scaled = upscale(candidate_image, factor=factor)
+        text, confidence = read_text_with_confidence(
+            scaled,
+            allowlist=allowlist,
+            min_confidence=min_conf,
+        )
+        cleaned_text = tidy_text(text)
+        if cleaned_text and confidence >= (min_conf + 0.05):
+            return cleaned_text
+        if cleaned_text:
+            better_conf = confidence > best_confidence + 0.02
+            similar_conf = abs(confidence - best_confidence) <= 0.02 and len(cleaned_text) > len(best_text)
+            if better_conf or similar_conf:
+                best_text = cleaned_text
+                best_confidence = confidence
+
+    if best_text:
+        return best_text
+
+    fallback = tidy_text(run_easyocr(upscale(gray, factor=2.4)))
+    return fallback
+
+
+def format_date_from_digits(digits: str) -> Optional[str]:
+    if not digits:
+        return None
+
+    def valid(day: int, month: int, year: int) -> bool:
+        return 1 <= day <= 31 and 1 <= month <= 12 and 1900 <= year <= 2100
+
+    if len(digits) >= 6:
+        day = int(digits[:2])
+        month = int(digits[2:4])
+        year = int(digits[4:6])
+        year += 2000 if year < 50 else 1900
+        if valid(day, month, year):
+            return f"{day:02d}.{month:02d}.{year:04d}"
+    return None
+
+
+def extract_date(image: np.ndarray) -> str:
+    digits = extract_digits(image)
+    formatted = format_date_from_digits(digits)
+    if formatted:
+        return formatted
+    return digits[:6]
+
+
 def parse_date(raw: str) -> str:
     digits = re.sub(r"[^0-9]", "", raw)
-    if len(digits) >= 8:
-        dd, mm, yyyy = digits[:2], digits[2:4], digits[4:8]
-        return f"{dd}.{mm}.{yyyy}"
-    if len(digits) == 6:
-        dd, mm, yy = digits[:2], digits[2:4], digits[4:6]
-        prefix = "20" if int(yy) < 50 else "19"
-        return f"{dd}.{mm}.{prefix}{yy}"
-    return raw.strip()
+    formatted = format_date_from_digits(digits)
+    if formatted:
+        return formatted
+    return digits[:6].strip()
 
 
 def detect_checkbox(image: np.ndarray) -> str:
     if image.size == 0:
         return "false"
-    if len(image.shape) == 3:
+    if image.ndim == 3:
+        color = image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image
-    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-    fill_ratio = binary.sum() / (255 * binary.size)
-    return "true" if fill_ratio > 0.10 else "false"
+        color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    inner = shrink_crop(color, margin_ratio=0.12)
+    if inner.size == 0:
+        inner = color
+
+    cleaned = suppress_guidelines(inner)
+    if cleaned.ndim == 3:
+        cleaned_gray = cv2.cvtColor(cleaned, cv2.COLOR_BGR2GRAY)
+    else:
+        cleaned_gray = cleaned
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    enhanced = clahe.apply(cleaned_gray)
+    blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
+    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+
+    kernel = np.ones((3, 3), np.uint8)
+    strokes = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
+    strokes = cv2.morphologyEx(strokes, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8), iterations=1)
+
+    height, width = strokes.shape[:2]
+    total_area = float(height * width)
+    if total_area == 0:
+        return "false"
+
+    num_labels, _, stats, _ = cv2.connectedComponentsWithStats(strokes, connectivity=8)
+    significant_area = 0.0
+    elongated_component = False
+    for idx in range(1, num_labels):
+        area = float(stats[idx, cv2.CC_STAT_AREA])
+        if area < 12:
+            continue
+        significant_area += area
+        w = stats[idx, cv2.CC_STAT_WIDTH]
+        h = stats[idx, cv2.CC_STAT_HEIGHT]
+        if w >= 0.35 * width or h >= 0.35 * height:
+            elongated_component = True
+
+    ink_ratio = significant_area / total_area
+    if ink_ratio >= 0.012 or (ink_ratio >= 0.006 and elongated_component):
+        return "true"
+    return "false"
 
 
 def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray) -> str:
     height, width = gray_img.shape[:2]
     y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
     crop_color = color_img[y1:y2, x1:x2]
-    crop_gray = gray_img[y1:y2, x1:x2]
+    margin_map = {
+        "digits": 0.06,
+        "date": 0.06,
+        "checkbox": 0.08,
+        "text": 0.05,
+    }
+    margin = margin_map.get(roi.kind, 0.05)
+    crop_color = shrink_crop(crop_color, margin_ratio=margin)
 
     if roi.kind == "digits":
         value = extract_digits(crop_color)
     elif roi.kind == "date":
-        value = parse_date(extract_digits(crop_color))
+        value = extract_date(crop_color)
     elif roi.kind == "checkbox":
         value = detect_checkbox(crop_color)
     else:
-        value = run_easyocr(crop_gray)
+        value = extract_text(crop_color)
     return value.strip()
 
 def extract_fields(uploaded_file, preview: bool = False):
