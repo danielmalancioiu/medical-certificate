@@ -9,16 +9,6 @@
     "kind": "digits",
     "description": "Valabil pentru luna (litere)"
   },
-  "valabil_pentru_luna_text": {
-    "roi": [
-      0.152146,
-      0.276775,
-      0.181135,
-      0.406088
-    ],
-    "kind": "text",
-    "description": "Valabil pentru luna (camp vecin)"
-  },
   "valabil_pentru_anul": {
     "roi": [
       0.155835,

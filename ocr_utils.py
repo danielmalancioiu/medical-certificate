@@ -18,7 +18,6 @@ reader = easyocr.Reader(["en"], gpu=True)
 TARGET_WIDTH = 1400
 TARGET_HEIGHT = 1980
 
-
 @dataclass(frozen=True)
 class RoiSpec:
     name: str
@@ -189,6 +188,35 @@ def upscale(image: np.ndarray, factor: float = 2.0) -> np.ndarray:
     return cv2.resize(image, None, fx=factor, fy=factor, interpolation=cv2.INTER_CUBIC)
 
 
+def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
+    """Highlight bluish strokes (common for ballpoint pen digits)."""
+    if image.size == 0:
+        return image
+
+    if image.ndim == 2:
+        bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    else:
+        bgr = image
+
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    lower_blue = np.array([85, 40, 50], dtype=np.uint8)
+    upper_blue = np.array([150, 255, 255], dtype=np.uint8)
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+    b_channel, g_channel, r_channel = cv2.split(bgr)
+    max_gr = cv2.max(g_channel, r_channel)
+    dominance = cv2.subtract(b_channel, max_gr)
+    dominance = cv2.normalize(dominance, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+
+    combined = cv2.max(mask, dominance)
+    combined = cv2.GaussianBlur(combined, (5, 5), 0)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(combined)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel, iterations=1)
+    return enhanced
+
+
 def run_easyocr(image: np.ndarray, allowlist: Optional[str]=None) -> str:
     if image.size == 0:
         return ""
@@ -197,33 +225,131 @@ def run_easyocr(image: np.ndarray, allowlist: Optional[str]=None) -> str:
     return " ".join(lines).strip()
 
 
+def read_digits_with_confidence(
+    image: np.ndarray,
+    allowlist: str = "0123456789",
+    min_confidence: float = 0.5,
+) -> Tuple[str, float]:
+    """Return digits and EasyOCR confidence for the strongest detection."""
+    if image.size == 0:
+        return "", 0.0
+
+    if image.ndim == 2:
+        rgb = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+    else:
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+
+    results = reader.readtext(rgb, detail=1, paragraph=False, allowlist=allowlist)
+
+    high_conf_digits: List[str] = []
+    fallback_digits: List[str] = []
+    best_confidence = 0.0
+    for _bbox, text, confidence in results:
+        if not text:
+            continue
+        sanitized = re.sub(r"[^0-9]", "", text)
+        if not sanitized:
+            continue
+        best_confidence = max(best_confidence, float(confidence))
+        fallback_digits.append(sanitized)
+        if confidence >= min_confidence:
+            high_conf_digits.append(sanitized)
+
+    if high_conf_digits:
+        return "".join(high_conf_digits), best_confidence
+    if fallback_digits and best_confidence >= max(0.01, min_confidence * 0.8):
+        return "".join(fallback_digits), best_confidence
+    return "", best_confidence
+
 
 def extract_digits(image: np.ndarray) -> str:
     if image.size == 0:
         return ""
     if len(image.shape) == 3:
+        color = image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image.copy()
+        color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-    primary_text = run_easyocr(upscale(gray), allowlist="0123456789")
-    digits = re.sub(r"[^0-9]", "", primary_text)
-    if digits:
-        return digits
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
 
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    binary = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 11
+    blue_enhanced = emphasize_blue_ink(color)
+    blue_blur = cv2.GaussianBlur(blue_enhanced, (3, 3), 0)
+    blue_binary = cv2.adaptiveThreshold(
+        blue_blur,
+        255,
+        cv2.ADAPTIVE_THRESH_MEAN_C,
+        cv2.THRESH_BINARY_INV,
+        25,
+        9,
     )
-    cleaned = remove_grid_lines(binary)
-    inverted = cv2.bitwise_not(cleaned)
-    secondary_text = run_easyocr(upscale(inverted), allowlist="0123456789")
-    digits = re.sub(r"[^0-9]", "", secondary_text)
-    if digits:
-        return digits
+    binary_clean = remove_grid_lines(blue_binary)
 
-    fallback_text = run_easyocr(upscale(cv2.bitwise_not(binary)), allowlist="0123456789")
-    return re.sub(r"[^0-9]", "", fallback_text)
+    ink_ratio = float(cv2.countNonZero(blue_binary)) / float(blue_binary.size)
+    peak_intensity = cv2.minMaxLoc(blue_enhanced)[1] if blue_enhanced.size else 0
+    if ink_ratio < 0.0008 and peak_intensity < 80:
+        return ""
+
+    digits_allowlist = "0123456789"
+    candidates = [
+        {"image": gray, "scale": 2.2},
+        {"image": gray_clahe, "scale": 2.4},
+        {"image": color, "scale": 2.0},
+        {"image": blue_enhanced, "scale": 2.8},
+        {"image": blue_binary, "scale": 3.0},
+        {"image": cv2.bitwise_not(blue_binary), "scale": 3.0},
+        {"image": binary_clean, "scale": 3.0},
+        {"image": cv2.bitwise_not(binary_clean), "scale": 3.0},
+    ]
+
+    best_digits = ""
+    best_confidence = 0.0
+
+    for candidate in candidates:
+        candidate_image = candidate["image"]
+        factor = candidate.get("scale", 2.0)
+        scaled = upscale(candidate_image, factor=factor)
+        digits, confidence = read_digits_with_confidence(
+            scaled,
+            allowlist=digits_allowlist,
+            min_confidence=0.55,
+        )
+        if digits and confidence >= 0.58:
+            return digits
+        if digits and confidence > best_confidence:
+            best_digits = digits
+            best_confidence = confidence
+
+    if best_confidence >= 0.48 and best_digits:
+        return best_digits
+
+    for candidate in candidates:
+        candidate_image = candidate["image"]
+        factor = candidate.get("scale", 2.0)
+        scaled = upscale(candidate_image, factor=factor)
+        digits, confidence = read_digits_with_confidence(
+            scaled,
+            allowlist=digits_allowlist,
+            min_confidence=0.4,
+        )
+        if digits and confidence >= 0.5:
+            return digits
+        if digits and confidence > best_confidence:
+            best_digits = digits
+            best_confidence = confidence
+
+    if best_confidence >= 0.42 and best_digits:
+        return best_digits
+
+    if ink_ratio >= 0.0015:
+        fallback_text = run_easyocr(upscale(cv2.bitwise_not(binary_clean), factor=3.0), allowlist=digits_allowlist)
+        fallback_digits = re.sub(r"[^0-9]", "", fallback_text)
+        if fallback_digits:
+            return fallback_digits
+
+    return best_digits if best_confidence > 0 else ""
 
 
 def parse_date(raw: str) -> str:
@@ -240,14 +366,14 @@ def parse_date(raw: str) -> str:
 
 def detect_checkbox(image: np.ndarray) -> str:
     if image.size == 0:
-        return "nu"
+        return "false"
     if len(image.shape) == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
         gray = image
     _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     fill_ratio = binary.sum() / (255 * binary.size)
-    return "da" if fill_ratio > 0.12 else "nu"
+    return "true" if fill_ratio > 0.10 else "false"
 
 
 def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray) -> str:
