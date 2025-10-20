@@ -1,44 +1,39 @@
-%latex model.tex
-%bibtex model
-%latex model.tex
-%latex model.tex
-%pdflatex model.tex
-
-%se poate lucra si online (de ex www.overleaf.com)
-
-
 \documentclass[runningheads,a4paper,11pt]{report}
 
 \usepackage{algorithmic}
-\usepackage{algorithm}
+\usepackage{algorithm} 
 \usepackage{array}
 \usepackage{amsmath}
 \usepackage{amsfonts}
 \usepackage{amssymb}
 \usepackage{amsthm}
 \usepackage{caption}
-\usepackage{comment}
-\usepackage{epsfig}
+\usepackage{comment} 
+\usepackage{epsfig} 
 \usepackage{fancyhdr}
 \usepackage[T1]{fontenc}
-\usepackage{geometry}
+\usepackage{geometry} 
 \usepackage{graphicx}
-\usepackage[colorlinks]{hyperref}
+\usepackage[colorlinks]{hyperref} 
 \usepackage[latin1]{inputenc}
 \usepackage{multicol}
-\usepackage{multirow}
+\usepackage{multirow} 
 \usepackage{rotating}
 \usepackage{setspace}
 \usepackage{subfigure}
 \usepackage{url}
 \usepackage{verbatim}
 \usepackage{xcolor}
+\usepackage{pgfgantt}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.multipart,fit}
+
 
 \geometry{a4paper,top=3cm,left=2cm,right=2cm,bottom=3cm}
 
 \pagestyle{fancy}
 \fancyhf{}
-\fancyhead[LE,RO]{Medical Certificates}
+\fancyhead[LE,RO]{Medical-Certificates DDE}
 \fancyhead[RE,LO]{InnoMind}
 \fancyfoot[RE,LO]{ITSG 2025-2026}
 \fancyfoot[LE,RO]{\thepage}
@@ -112,20 +107,20 @@ Lupu Eduard-Adrian, IS, 258-2, eduard.lupu@stud.ubbcluj.ro
 \pagenumbering{gobble}
 
 \begin{abstract}
-	Text of abstract. Short info about:
+	Text of abstract. Short info about: 
 	\begin{itemize}
-		\item project relevance/importance,
-		\item inteligent methods used for solving,
-		\item data involved in the numerical experiments;
+		\item project relevance/importance, 
+		\item inteligent methods used for solving, 
+		\item data involved in the numerical experiments; 
 		\item conclude by the the results obtained.
-		\item Please add a graphical abstract of your work.
+		\item Please add a graphical abstract of your work. 
 	\end{itemize}
 
-
+	
 
 \noindent
 \textbf{\textcolor{green}{Remind that a good report should:}}
-\begin{itemize}
+\begin{itemize}	
 	\item be fun to read with many figures and visualizations;
 	\item be easy to follow even for AI/ML novice;
 	\item clearly convey the potential of AI/ML to the application domain;
@@ -154,7 +149,78 @@ Lupu Eduard-Adrian, IS, 258-2, eduard.lupu@stud.ubbcluj.ro
 \pagenumbering{arabic}
 
 
+% ---------------------------------------------------------------------------------------------------------------
 
+
+\chapter{Team composition and roles}
+\label{chapter:team}
+
+\section{Table of main skills and contributions}
+
+\begin{table}[h!]
+\centering
+\begin{tabular}{|l|p{5cm}|p{6cm}|}
+\hline
+\textbf{Name} & \textbf{Main Skills} & \textbf{Roles and Contributions} \\ \hline
+Nichifor Dragos &
+Python development, OpenCV, Streamlit, OCR pipeline design, testing, documentation &
+\\ \hline
+Malancioiu Daniel-George &
+Python development, OpenCV, Streamlit, OCR pipeline design, testing, documentation &
+\\ \hline
+Lupu Eduard-Adrian &
+Python development, OpenCV, Streamlit, OCR pipeline design, testing, documentation &
+\\ \hline
+\multicolumn{3}{|p{14cm}|}{
+\textbf{Note:} All team members shared identical technical responsibilities and actively participated in every project stage.  
+Development followed a \textbf{pair programming} and \textbf{peer review} workflow to ensure code consistency and shared understanding.  
+Documentation was written collaboratively, with all members contributing to structure, content, and refinement.  
+This cooperative approach ensured a balanced workload, and higher software reliability.
+} \\ \hline
+\end{tabular}
+\caption{Team members, shared skills, and collaborative responsibilities.}
+\end{table}
+
+\newpage 
+\section{Performed tasks (Gantt diagram)}
+\addcontentsline{toc}{section}{Performed tasks (Gantt diagram)}
+
+\begin{figure}[htbp]
+\centering
+\resizebox{\textwidth}{!}{%
+\begin{ganttchart}[
+  hgrid, vgrid,
+  x unit=0.38cm,
+  y unit chart=0.50cm,
+  bar height=0.45,
+  group right shift=0,
+  group/.append style={fill=gray!60},
+  bar/.append style={fill=gray!30},
+  milestone/.append style={fill=black},
+  bar label font=\tiny,
+  title label font=\scriptsize
+]{1}{14}
+  \gantttitle{Project Timeline (Weeks)}{14} \\
+  \gantttitlelist{1,...,14}{1} \\
+
+  \ganttgroup{\tiny{Planning \& Setup}}{1}{2} \\
+  \ganttgroup{\tiny{Implementation}}{2}{4} \\
+  \ganttgroup{\tiny{Validation \& Reporting}}{3}{4} \\
+
+  \ganttbar{Lab1}{1}{2} \\ 
+  \ganttbar{Lab2}{2}{4} \\
+  \ganttbar{Lab3}{3}{4} \\ 
+  \ganttbar{Lab4}{4}{4} \\ 
+  \ganttbar{Lab5}{4}{4} \\ 
+  \ganttbar{Lab6}{4}{4} \\
+  \ganttbar{Lab7}{4}{4} \\
+\end{ganttchart}
+}
+\caption{ Compact schedule by lab milestones. }
+\end{figure}
+
+
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \chapter{Introduction}
@@ -163,370 +229,356 @@ Lupu Eduard-Adrian, IS, 258-2, eduard.lupu@stud.ubbcluj.ro
 \section{What? Why? How?}
 \label{section:what}
 
-This report presents an intelligent system designed to automatically extract relevant information from Romanian \textbf{medical leave certificates}.
+This report presents an intelligent web-based system designed to automatically extract structured information from Romanian \textbf{medical leave certificates} (\textit{Certificat de Concediu Medical}) issued by CNAS.
 
-The main goal is to transform scanned or photographed documents into structured digital records containing the fields \texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, \texttt{EndDate}.
-The proposed solution aims to reduce human error and improve efficiency in administrative workflows, particularly in HR departments.
+The main idea behind the project is to build a practical and lightweight solution that transforms scanned or photographed documents into digital records containing key fields such as \texttt{Series}, \texttt{Number}, \texttt{CNP},  \texttt{Start Date}, \texttt{End Date}, and \texttt{Diagnostic Code}.  
+The application provides an end-to-end automated workflow --- from image upload to structured JSON or Excel output --- reducing manual effort and minimizing transcription errors.
 
-Manual transcription is slow and unreliable due to inconsistent document layouts and frequent handwritten additions.
+The motivation for this work stems from the inefficiency of manual data entry and the difficulty of using traditional rule-based OCR systems in real-world environments~\cite{Smith2007}.  
+Romanian medical certificates vary significantly in layout, image quality, and the presence of handwritten text.  
+Such inconsistencies make static template-based extraction unreliable.  
+To address this, the proposed system integrates \textbf{EasyOCR}~\cite{JaidedAI2020} for multilingual printed and handwritten text recognition with \textbf{OpenCV}-based preprocessing~\cite{Bradski2000} and a normalized \textbf{ROI grid} that maps the layout of the certificate.
 
-To address these challenges, our system combines classical computer vision techniques (OpenCV and Tesseract OCR) with a lightweight intelligent classifier trained on small data samples to identify handwritten regions that may reduce OCR accuracy.
+Unlike fixed-coordinate OCR pipelines, the ROI-based approach operates on a canonical aligned template (1400$\times$1980) and maps the normalized coordinates to each uploaded image by scaling.
+Each ROI is cropped and processed individually, providing stable results without full-page OCR.  
 
-The motivation for this work lies in the observation that rule-based OCR systems fail to generalize across different document templates and handwritten inputs.
-By introducing an intelligent learning component, the system can adaptively distinguish between printed and hand-written text, improving robustness without requiring manual template updates.
-This intelligent behaviour is essential for achieving automation in heterogeneous, real-world administrative environments.
+The entire pipeline is implemented as an interactive \textbf{Streamlit} web application~\cite{Streamlit2020}.  
+Users can upload certificate images, preview detected regions highlighted in the document, and export extracted data in JSON or Excel format.  
+This design emphasizes interpretability and usability, making the solution suitable for both technical and non-technical personnel in healthcare and HR departments.
 
+In summary, the project introduces an intelligent document processing workflow that combines modern OCR technology with adaptive region mapping, enabling automatic, accurate, and scalable data extraction from heterogeneous Romanian medical certificates.
 
 \section{Paper structure and original contribution(s)}
 \label{section:structure}
 
-The research presented in this report advances the design and implementation of intelligent algorithms for document processing in administrative and healthcare contexts.
-The goal is to build a modular system capable of extracting structured information from Romanian medical leave certificates, even when the documents contain a mix of printed and handwritten text.
+The research presented in this report advances the design and implementation of intelligent algorithms for document processing in administrative and healthcare contexts.  
 
 The main contributions of this work are as follows:
-
 \begin{itemize}
-  \item \textbf{Intelligent extraction algorithm.}
-  Development of an end-to-end OCR pipeline combining classical computer vision methods (OpenCV preprocessing, Tesseract OCR) with rule-based postprocessing for field extraction and validation.
-  The system can identify and extract fields such as \texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, and \texttt{EndDate} with minimal user intervention.
-
-  \item \textbf{Lightweight classification model.}
-  Implementation of a small-data intelligent module based on Histogram of Oriented Gradients (HOG) and a Linear Support Vector Machine (SVM).
-  This model detects whether a text region is printed or handwritten, helping to flag uncertain OCR results that require manual review.
-
-  \item \textbf{Integrated and user-friendly software application.}
-  Design of a Python-based application with both a command-line interface (CLI) and a simple web API that allows document upload, automatic extraction, and Excel export of the results.
-  The solution can be easily extended to other administrative document types.
-
-  \item \textbf{Experimental validation.}
-  Evaluation of the system on a small dataset of anonymised medical certificates, demonstrating that combining traditional OCR with lightweight learning achieves high accuracy for printed text and efficient detection of handwritten zones.
+  \item \textbf{ROI-based extraction algorithm.}  
+  Development of an OCR pipeline that operates on normalized, pre-defined regions of interest (ROIs) defined on a canonical aligned certificate template.  
+  Each ROI is dynamically scaled to match the uploaded image, cropped, and passed to EasyOCR for recognition.
+  \item \textbf{Lightweight intelligent OCR integration.}  
+  Use of EasyOCR for multilingual text recognition, capable of handling both printed and handwritten text, combined with OpenCV preprocessing for image alignment and thresholding.
+  \item \textbf{User-friendly Streamlit interface.}  
+  An intuitive web application that allows users to upload certificates, preview the detected regions, view structured results, and export them to Excel.
+  \item \textbf{Experimental validation.}  
+  Evaluation on a small dataset of anonymised certificates showing robust performance under varying lighting, skew, and noise conditions.
 \end{itemize}
 
 The report is structured into the following chapters:
-
 \begin{itemize}
-  \item \textbf{Chapter \ref{chapter:introduction}} introduces the context, motivation, and overall goals of the project.
-  \item \textbf{Chapter \ref{section:scientificProblem}} defines the scientific problem addressed and explains why intelligent algorithms are required for its solution.
-  \item \textbf{Chapter \ref{chapter:stateOfArt}} reviews related work and discusses the most relevant tools and technologies.
-  \item \textbf{Chapter \ref{chapter:proposedApproach}} details the proposed approach, describing both the OCR pipeline and the intelligent classification component.
-  \item \textbf{Chapter \ref{chapter:application}} presents experimental results and analysis.
-  \item The report concludes with a SWOT analysis and future development directions.
+\item \textbf{Chapter \ref{chapter:team}} presents the \textit{team composition, individual skills, roles, and the overall work distribution}, together with a Gantt diagram summarizing the performed tasks across labs.
+  \item \textbf{Chapter \ref{chapter:introduction}} introduces the context, motivation, and project objectives.  
+  \item \textbf{Chapter \ref{chapter:scientificProblem}} defines the scientific problem addressed and explains why intelligent algorithms are required.  
+  \item \textbf{Chapter \ref{chapter:stateOfArt}} reviews related work and key technologies.  
+  \item \textbf{Chapter \ref{chapter:proposedApproach}} details the ROI-driven approach, algorithms, and technologies.  
+  \item \textbf{Chapter \ref{chapter:application}} presents the experimental methodology and results.  
+  \item \textbf{Chapter \ref{chapter:swot}} provides a SWOT analysis summarizing the system's strengths, weaknesses, opportunities, and threats.  
+  \item \textbf{Chapter \ref{chapter:concl}} concludes the report with final observations and potential future improvements.
 \end{itemize}
 
 
+% ---------------------------------------------------------------------------------------------------------------
+
+
 \chapter{Scientific Problem}
-\label{section:scientificProblem}
+\label{chapter:scientificProblem}
 
 \section{Problem definition}
 \label{section:problemDefinition}
 
-The addressed problem concerns the automatic extraction of structured information from scanned or photographed Romanian \textbf{medical leave certificates}.
-Such documents are still widely used in administrative and HR processes and contain essential information such as the employee's name, personal identification number (CNP), start and end dates of medical leave, and total number of days.
+The addressed problem concerns the automatic extraction of structured information from scanned or photographed Romanian \textbf{medical leave certificates}.  
+Such certificates contain key fields required by HR and healthcare systems, including the unique personal identification number (CNP), the start and end dates of the leave, diagnostic codes, and issuer details.
 
-Currently, this information is often entered manually into HR systems, a process that is time-consuming, error-prone, and inefficient.
-The goal of the proposed system is to transform a scanned document into a structured digital record that can be automatically processed by other applications.
+Currently, this information is entered manually, which is slow, error-prone, and inconsistent.  
+The challenge lies in handling multiple certificate layouts, variable image quality, and mixed printed-handwritten text. 
 
 \bigskip
-Formally, the problem can be defined as follows:
+Formally, the task is defined as follows:
 \begin{itemize}
-  \item \textbf{Input:} a digital image $I$ representing a medical certificate in varying formats (printed, hand-filled, or mixed).
-  \item \textbf{Output:} a tuple
-  \[
-  \langle \text{Name}, \text{CNP}, \text{StartDate}, \text{EndDate}, \text{NumberOfDays} \rangle
-  \]
-  together with a validation report ensuring that the extracted information is correct and complete.
+  \item \textbf{Input:} a scanned or photographed certificate image $I$ with possible skew, noise, or lighting variations.  
+  \item \textbf{Output:} a structured dictionary represented as:
+    \[
+    \langle
+    \begin{array}{l}
+    \text{SurgicalUrgency},\ \text{Initial},\ \text{Continuation},\ \text{Series},\ \text{Number}, \\
+    \text{AvailableForMonth},\ \text{AvailableForYear},\ \text{IndemnityCode},\ \text{CountryInsurer}, \\
+    \text{CNP},\ \text{ChildCNP},\ \text{RegistrationCode},\ \text{StartDate},\ \text{NumberOfDays}, \\
+    \text{EndDate},\ \text{DiagnosticCode},\ \text{Adult},\ \text{RegistrationCUI}, \\
+    \text{PhysicianCodeDirector},\ \text{PhysicianCodeHeadMedic},\ \text{CAS},\ \text{ReceivedOnDate}
+    \end{array}
+    \rangle
+    \]
+    that can be exported to Excel.
 \end{itemize}
 
 \bigskip
 \noindent
-The extraction process must address several challenges:
+Challenges include:
 \begin{enumerate}
-  \item \textbf{Document variability:} different certificate templates, fonts, and layouts;
-  \item \textbf{Noise and distortions:} low-quality scans, skewed alignment, and background artefacts;
-  \item \textbf{Handwritten content:} portions of text added manually that reduce OCR reliability;
-  \item \textbf{Field consistency:} ensuring that CNP and dates respect valid formatting and logical constraints.
+  \item \textbf{Template variability:} minor design differences between CNAS-issued forms.
+  \item \textbf{Image quality:} low resolution, rotation, and shadows in phone captures.
+  \item \textbf{Handwritten text:} reduces OCR reliability on critical fields.
+  \item \textbf{Validation:} ensuring extracted CNPs, dates, and numeric codes have valid formats.
 \end{enumerate}
 
 \bigskip
-This problem must be solved by an \textbf{intelligent algorithm} because deterministic, rule-based methods alone cannot generalize to the diversity of document types encountered in real-world usage.
-Intelligent models - such as machine learning classifiers - are capable of learning discriminative features (e.g., differentiating printed from hand-written text) and adapting to noisy or partially structured inputs.
+This problem requires an \textbf{intelligent} approach because purely rule-based systems cannot generalize beyond a single static template or font.  
+The combination of region-based OCR, learned character recognition, and normalization makes the extraction robust to visual distortions while remaining efficient and interpretable.
 
 \bigskip
-Solving this problem is important because it:
-\begin{itemize}
-  \item significantly reduces human effort in administrative data entry;
-  \item improves data accuracy and standardization in HR systems;
-  \item creates a foundation for broader document understanding tasks across healthcare and enterprise environments.
-\end{itemize}
+The importance of solving this problem lies in its real-world applicability: automating certificate processing reduces human error, accelerates HR procedures, and enables further AI-powered analytics within the healthcare system.
 
-\bigskip
-\noindent
-In summary, the proposed work aims to design a hybrid system that combines \textbf{classical OCR techniques} with \textbf{lightweight machine learning} to achieve accurate, explainable, and resource-efficient information extraction from heterogeneous medical certificates.
+
+\begin{figure}[htbp]
+\centering
+\resizebox{0.9\textwidth}{!}{%
+\begin{tikzpicture}[
+  node distance=10mm and 14mm,
+  >=Latex,
+  font=\scriptsize,
+  proc/.style={rectangle, rounded corners=2pt, draw=black, fill=gray!10, very thick, inner sep=3pt, align=center, minimum width=2.2cm, minimum height=0.9cm},
+  io/.style={rectangle, draw=black, very thick, fill=gray!20, inner sep=3pt, align=center, minimum width=2.5cm, minimum height=0.9cm},
+  arr/.style={-Latex, thick}
+]
+
+% Main pipeline
+\node[io] (input) {Input Image};
+\node[proc, right=of input] (prep) {Preprocessing};
+\node[proc, right=of prep] (roi) {ROI Mapping};
+\node[proc, right=of roi] (ocr) {OCR};
+\node[proc, right=of ocr] (post) {Post-processing};
+\node[io, right=of post] (output) {JSON / Excel};
+
+% Streamlit below
+\node[proc, below=12mm of ocr] (ui) {Streamlit Preview};
+
+% Connections
+\draw[arr] (input) -- (prep);
+\draw[arr] (prep) -- (roi);
+\draw[arr] (roi) -- (ocr);
+\draw[arr] (ocr) -- (post);
+\draw[arr] (post) -- (output);
+
+% Streamlit tap
+\draw[arr] (roi) |- (ui);
+\draw[arr] (ocr) |- (ui);
+\draw[arr] (post) |- (ui);
+
+\end{tikzpicture}
+}
+\caption{Simplified graphical abstract of the document processing pipeline.}
+\label{fig:pipeline}
+\end{figure}
+
+
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \chapter{State of the art/Related work}
 \label{chapter:stateOfArt}
 
-Automatic information extraction from scanned documents is an important research direction within the broader field of \textit{document understanding}.
-Traditional approaches rely on Optical Character Recognition (OCR) techniques, followed by post-processing to extract relevant fields.
-Although these methods perform well on printed text, they often fail when the input contains handwriting, skewed layouts, or image artefacts.
+Document digitization and text extraction have been long-standing goals in intelligent automation.  
+Traditional OCR-based systems have evolved from deterministic template matching toward adaptive, machine-learning-based methods.
 
-\section*{Classical approaches}
-Classical OCR engines such as \textbf{Tesseract}~\cite{Smith2007} and \textbf{ABBYY FineReader} are capable of converting printed documents into machine-readable text with relatively high accuracy.
-These tools are usually combined with preprocessing techniques like deskewing, noise reduction, and adaptive thresholding~\cite{Niblack1985, Sauvola2000}.
-However, their performance strongly depends on the quality and regularity of the input layout.
+\section{Classical approaches}
+Early OCR engines such as \textbf{Tesseract}~\cite{Smith2007} and \textbf{ABBYY FineReader}~\cite{ABBYYFineReader} rely on rule-based character segmentation and pattern matching.  
+They achieve good results on printed text but degrade when faced with handwriting, noise, or low contrast.  
+Classical preprocessing --- deskewing, thresholding, and denoising --- remains crucial for improving recognition quality~\cite{Niblack1985,Sauvola2000}.
 
-In the context of medical or administrative forms, several studies have proposed rule-based systems to detect keywords and delimit specific text zones.
-Such systems are interpretable but fragile, as even small variations in template design may lead to parsing errors.
+\section{Modern learning-based methods}
+Recent advances use deep learning to recognize both printed and cursive text.  
+Libraries like \textbf{EasyOCR}~\cite{JaidedAI2020} employ convolutional networks trained on multilingual datasets to perform character detection and recognition jointly.  
+In contrast to Tesseract, EasyOCR generalizes better to varied fonts and handwritten inputs, making it suitable for heterogeneous administrative documents.  
+Other research directions, such as \textbf{LayoutLM}~\cite{Xu2020} and \textbf{DocFormer}~\cite{Appalaraju2021}, combine text with spatial layout embeddings, but these models require large datasets and substantial compute power.
 
-\section*{Learning-based methods}
-More recent research applies machine learning for document structure analysis and handwriting detection.
-Convolutional Neural Networks (CNNs) and Transformer-based models such as LayoutLM~\cite{Xu2020} have been used to classify regions of interest or predict field positions within forms.
-Although effective, these methods require large annotated datasets and significant computational resources, which are not always available for niche administrative documents written in Romanian.
+\section{Hybrid and practical solutions}
+For specialized, small-data domains such as Romanian CNAS certificates, lightweight hybrid approaches are preferable.  
+Our solution combines classical image preprocessing (\textbf{OpenCV}~\cite{Bradski2000}) with a deep-learning OCR engine (\textbf{EasyOCR}~\cite{JaidedAI2020}), controlled by a region-based extraction logic defined through an ROI map.  
+This design keeps inference deterministic, fast, and interpretable while maintaining adaptability to new templates.
 
-\section*{Proposed direction}
-The present work adopts a hybrid and lightweight approach.
-It combines the reliability of classical OCR with a small-data machine-learning model that detects whether a region is printed or hand-written.
-This strategy has several advantages:
+\section{Tools and technologies used}
 \begin{itemize}
-  \item it works even with a limited number of labelled samples;
-  \item it remains interpretable and easily maintainable;
-  \item it integrates seamlessly with existing OCR pipelines.
+  \item \textbf{OpenCV:} grayscale conversion, deskewing, thresholding, and image normalization~\cite{Bradski2000}.
+  \item \textbf{EasyOCR:} recognition engine for printed and handwritten text~\cite{JaidedAI2020}.
+  \item \textbf{Streamlit:} front-end framework for fast UI prototyping and visualization~\cite{Streamlit2023}.
+  \item \textbf{Pandas \& OpenPyXL:} for structured data management and Excel export~\cite{McKinney2010,OpenPyXL2024}.
+  \item \textbf{Python:} main programming language ensuring modularity and cross-platform compatibility~\cite{PythonDocs}.
 \end{itemize}
 
-In contrast to fully deep-learning solutions, our system focuses on reproducibility and transparency.
-It leverages existing open-source technologies - OpenCV, Tesseract, and Scikit-learn - to achieve a good balance between accuracy, efficiency, and practical deployability.
+Compared to previous rule-based systems, this hybrid pipeline delivers robust performance with limited data, minimal manual configuration, and full reproducibility.
 
-\section*{Useful tools and technologies}
-\begin{itemize}
-  \item \textbf{OpenCV} - used for preprocessing: grayscale conversion, skew correction, and adaptive thresholding.
-  \item \textbf{Tesseract OCR} - open-source OCR engine supporting both Romanian and English languages, responsible for text extraction.
-  \item \textbf{Scikit-learn} - library for classical machine learning, used to implement a linear Support Vector Machine (SVM) classifier with HOG features.
-  \item \textbf{Pandas/OpenPyXL} - libraries for structured data handling and Excel export.
-  \item \textbf{Python 3.11} - main language ensuring modular and platform-independent integration.
-\end{itemize}
 
-In summary, while previous works often required large-scale deep learning or relied purely on fixed templates, our approach offers a compromise between accuracy and simplicity by employing a hybrid OCR-machine learning workflow suitable for small-data conditions.
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \chapter{Investigated approach}
 \label{chapter:proposedApproach}
 
-\section*{Overview}
-The system converts a scanned/photographed Romanian medical leave certificate into a structured record with fields
-\texttt{Serie}, \texttt{Numar}, \texttt{CNP}, \texttt{StartDate}, \texttt{EndDate}.
-It consists of two main components:
-\begin{enumerate}
-  \item \textbf{OCR-based extraction (base flow).} Classical computer vision preprocessing (OpenCV) + Tesseract OCR, followed by rule-based parsing and validation.
-  \item \textbf{Lightweight intelligent classifier.} A small-data model that distinguishes \emph{printed} vs. \emph{handwritten} regions and flags zones that may degrade OCR accuracy.
-\end{enumerate}
+\section{Overview}
+The system operates by mapping a predefined set of normalized regions of interest (ROIs) onto the uploaded image, cropping each region, and running OCR individually.  
+This ensures consistent extraction even if the document is slightly misaligned or scaled.  
 
-\section*{Base flow: preprocessing, OCR, parsing, validation}
-\paragraph{Preprocessing.} Each input image is converted to grayscale, deskewed using Hough-based angle estimation, and binarized with adaptive Gaussian thresholding to enhance text contrast and suppress background artefacts.
-
-\paragraph{OCR.} We use Tesseract (languages \texttt{ron+eng}) to obtain token-level text with positions, which enables anchor-based field parsing.
-
-\paragraph{Parsing and validation.} Fields are extracted with anchor tokens (e.g., "Serie", "Numar", "CNP", "De la", "Pana la") and regular expressions (CNP and date formats). Validation includes:
-\begin{itemize}
-  \item \textbf{CNP checksum} (control digit verification);
-  \item \textbf{Date interval} consistency: \texttt{EndDate} $\geq$ \texttt{StartDate}.
-\end{itemize}
+\paragraph{ROI grid definition and mapping.}
+Rectangles are manually annotated on an aligned certificate image of fixed size (1400$\times$1980).  
+Each rectangle is stored as normalized coordinates $[t, l, b, r]$ in a JSON file (\texttt{roi\_map.json}).  
+When a new image is uploaded, these coordinates are scaled to the image's actual dimensions.  
+Each cropped region is passed to EasyOCR~\cite{JaidedAI2020}, and the recognized text is postprocessed according to its field type.
 
 \begin{algorithm}[H]
-\caption{BaseFlow: OCR $\rightarrow$ Parse $\rightarrow$ Validate $\rightarrow$ Export}
-\label{alg:baseflow}
+\caption{ROI-driven OCR pipeline (as implemented)}
 \begin{algorithmic}
-  \STATE \textbf{Input:} image $I$
-  \STATE $G \leftarrow \text{grayscale}(I)$
-  \STATE $\theta \leftarrow \text{estimate\_skew}(G)$
-  \STATE $B \leftarrow \text{adaptive\_threshold}(\text{rotate}(G,-\theta))$
-  \STATE $T \leftarrow \text{tesseract\_ocr}(B,\text{lang}=\{\texttt{ron},\texttt{eng}\})$
-  \STATE $\text{fields} \leftarrow \text{parse\_anchors\_and\_regex}(T)$
-  \STATE $\text{ok} \leftarrow \text{cnp\_checksum}(\text{fields.CNP}) \wedge \text{date\_order}(\text{fields.StartDate},\text{fields.EndDate})$
-  \STATE \textbf{return} $\{\text{fields}, \text{ok}\}$
-\end{algorithmic}
-\end{algorithm}
-
-\section*{Intelligent component: printed vs. handwritten detection}
-To increase robustness on heterogeneous documents, we add a small-data classifier that labels local patches around candidate fields as \emph{printed} or \emph{handwritten}. If a patch is predicted \emph{handwritten}, the system marks the field as \texttt{needs\_review}.
-
-\paragraph{Model and features.}
-We use \textbf{Histogram of Oriented Gradients (HOG)} features and a \textbf{Linear SVM} classifier (scikit-learn). Patches are $64\times 64$ px, grayscale, normalized.
-
-\paragraph{Training / inference.}
-Training is offline on a small labelled set; inference runs per document at extraction time.
-
-\begin{algorithm}[H]
-\caption{Printed vs. Handwritten Classification (small-data)}
-\label{alg:hwclassifier}
-\begin{algorithmic}
-  \STATE \textbf{Train:} collect labelled patches $\{(X_i,y_i)\}$, $y\in\{\text{printed},\text{handwritten}\}$
-  \STATE $F_i \leftarrow \text{HOG}(X_i)$; train Linear SVM on $\{(F_i,y_i)\}$
-  \STATE \textbf{Infer (hook in BaseFlow):}
-  \FOR{each candidate region $R$ around an anchor}
-     \STATE $p \leftarrow \text{crop}(I,R)$; $f \leftarrow \text{HOG}(p)$; $\hat{y}\leftarrow \text{SVM.predict}(f)$
-     \IF{$\hat{y}=\text{handwritten}$}
-        \STATE mark $R$ as \texttt{needs\_review}
-     \ENDIF
+  \STATE Load normalized ROI map $\mathcal{R}$ from \texttt{roi\_map.json}
+  \STATE Read input image $I$, convert to grayscale, deskew, and threshold
+  \FOR{each field $k$ with ROI $(t,l,b,r) \in \mathcal{R}$}
+     \STATE $(y_1,y_2,x_1,x_2)\leftarrow \text{scale}(t,l,b,r,\text{height}(I),\text{width}(I))$
+     \STATE $C \leftarrow I[y_1\!:\!y_2,\,x_1\!:\!x_2]$
+     \STATE $s \leftarrow \text{EasyOCR}(C)$
+     \STATE $v_k \leftarrow \text{postprocess}(s, \text{kind}(k))$
   \ENDFOR
+  \STATE \textbf{return} JSON dictionary $\{k \mapsto v_k\}$ and preview image with ROI overlays
 \end{algorithmic}
 \end{algorithm}
 
-\section*{Technological details}
+\paragraph{Per-field postprocessing}
 \begin{itemize}
-  \item \textbf{Language \& libs:} Python 3.11, OpenCV, pytesseract, scikit-learn, pandas/openpyxl.
-  \item \textbf{Architecture:} modular pipeline, low coupling; OCR and classifier are separable modules.
-  \item \textbf{Model serving:} SVM serialized with \texttt{joblib} (pickle); embedded in the app.
-  \item \textbf{Training:} offline/static; \textbf{inference:} per-document (dynamic).
-  \item \textbf{Debugging/testing:} visual inspection of preprocessed images, logging OCR tokens, unit tests for CNP/date validators, confusion-matrix analysis for the classifier.
+  \item \textbf{digits:} keep numeric characters, enforce expected length (e.g., CNP = 13 digits).
+  \item \textbf{date:} regex-based parsing and normalization to ISO format.
+  \item \textbf{text:} trim, preserve diacritics, remove duplicates.
+  \item \textbf{checkbox:} classify as checked/unchecked based on average pixel intensity.
 \end{itemize}
+
+\section{Validation and output}
+After all ROIs are processed, the system validates the extracted values using regular expressions and consistency checks (e.g., date intervals, numeric formats).  
+The results are displayed in the Streamlit interface~\cite{Streamlit2023}, shown as both JSON and a pandas~\cite{McKinney2010} table, and optionally exported as an Excel file via OpenPyXL~\cite{OpenPyXL2024}.
+
+\section{Software architecture}
+The implementation follows a modular structure:
+\begin{itemize}
+  \item \texttt{ocr\_utils.py} - ROI scaling, OCR execution, postprocessing, validation.
+  \item \texttt{app.py} - Streamlit UI, language switching (English/Romanian), and Excel export.
+  \item \texttt{roi\_map.json} - ROI definitions.
+\end{itemize}
+Components are loosely coupled, and the OCR engine can be replaced or retrained independently.
+
+\noindent \textit{AI serving:} the OCR component is \textbf{embedded} in the application (no external microservice); model weights are loaded at runtime by EasyOCR.
+
+
+\section{Debugging and testing}
+During development, a dedicated debugging script (\texttt{debug\_rois.py}) crops all regions of interest (ROIs) from the aligned certificate template and saves them to disk for visual verification.  
+This process ensures that ROI coordinates are correctly aligned with the target document layout before running OCR.  
+
+The Streamlit interface itself serves as a real-time visualization and testing environment: each uploaded image is processed, and detected text regions are overlaid and displayed interactively for inspection.  
+Formal validation tests (e.g., for CNP or date formats) are planned as future improvements.
+
+\noindent \textit{Iterative perspective:} ROI coordinates were adjusted iteratively based on the Streamlit preview until misalignments were eliminated, after which the ROI map was fixed and versioned.
+
+
+\section{Development environment.}
+The application was implemented in \textbf{Python}~\cite{PythonSoftwareFoundation2024} using the \textbf{Visual Studio Code} editor~\cite{VSCode2024} on Windows 11.  
+Development used a local \texttt{venv} virtual environment, with dependencies managed via a \texttt{requirements.txt} file.  
+Bugs were identified through ROI misalignment inspection, logging OCR outputs, and verifying extracted field validity during live runs in the Streamlit interface.  
+Average workload during testing was below 8 seconds per certificate on a standard laptop CPU.
+
+\section{Versioning and Continuous Delivery}
+
+The project was developed collaboratively in a single \textbf{Git} repository, which contains both the application code and documentation.  
+Version control was used to track progress, synchronize work between team members, and maintain a clean commit history.  
+
+All testing and debugging were performed locally in a controlled \texttt{venv} environment.  
+Once validated, updates were committed and pushed to the shared repository, ensuring all members had the latest working version.  
+This simple yet effective workflow provided continuous integration at the local level and reproducible delivery through Git.
+
+
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \chapter{Application (numerical validation)}
 \label{chapter:application}
 
 \section{Methodology}
-We evaluate the end-to-end pipeline and the intelligent classifier on a small anonymised dataset.
-Our experiments answer:
-\begin{itemize}
-  \item How accurate is field extraction on printed vs. mixed (printed + handwritten) certificates?
-  \item Can a small-data classifier reliably flag handwritten regions that require review?
-  \item What is the runtime per document on commodity hardware?
-\end{itemize}
-\noindent
-\textbf{Metrics:} field-wise accuracy for OCR extraction; accuracy/precision/recall for the classifier; average processing time (s/doc).
+The evaluation focuses on the correctness of extracted fields and runtime performance.  
+Three questions guided the experiments:
+\begin{enumerate}
+  \item How accurately are key fields (Series, Number, CNP, Dates, Diagnostic Code) extracted from typical CNAS certificates?
+  \item How robust is the ROI scaling under skew and resolution changes?
+  \item What is the end-to-end runtime for a single document?
+\end{enumerate}
+
+\paragraph{Testing scope.}
+We conducted (i) \textbf{data testing} by validating each field against expected formats (digits, dates, lengths), 
+(ii) \textbf{integration testing} by running end-to-end flows (UI upload $\rightarrow$ ROI $\rightarrow$ OCR $\rightarrow$ Excel export) on multiple images, 
+and (iii) \textbf{AI quality testing} by computing field-wise extraction accuracy and checkbox recognition accuracy against manually verified ground truth.
 
 \section{Data}
-The dataset includes $\sim$60 certificates (40 primarily printed, 20 mixed).
-For the classifier, we use $\sim$200 cropped patches ($64\times 64$ px), manually labelled as \texttt{printed} or \texttt{handwritten}.
-Images are stored in a simple data-lake - like folder structure with versioned subsets to ensure reproducibility.
+A dataset of 10 anonymised certificates was used.
+All certificates share the CNAS form layout but differ slightly in proportions.  
+Fields were annotated manually to verify accuracy.  
+Images were stored in a versioned data folder to ensure reproducibility.
+
+\noindent \textit{Storage rationale:} a simple, versioned folder structure (``data/'' and ``results/'') was preferred over a data warehouse or lake due to the small dataset size and the need for quick, local iteration.
+
 
 \section{Results}
 \begin{table}[htbp]
 \centering
-\caption{Summary of quantitative results.}
+\caption{Summary of extraction performance.}
 \begin{tabular}{l c}
 \hline
 Metric & Value \\
 \hline
-Field extraction accuracy (printed) & 90\% \\
-Field extraction accuracy (mixed) & 60\% \\
-Printed vs. handwritten classifier accuracy & 84\% \\
-Average processing time / document & $<$ 2 s \\
+Field extraction accuracy (printed text) & 85-90\% \\
+Field extraction accuracy (mixed text) & 60-65\% \\
+Checkbox recognition accuracy & 100\% \\
+Average runtime / document & $<$ 8 s \\
 \hline
 \end{tabular}
 \end{table}
 
-\noindent
-\textbf{Observations.}
-Most OCR errors on mixed documents are caused by cursive handwriting, severe skew, or low contrast.
-The classifier correctly flags the majority of problematic regions, reducing the chance that erroneous OCR propagates to the final Excel export.
+The ROI mapping proved stable across all evaluated certificate samples that followed the standard CNAS layout.  
+Most recognition errors appeared in low-contrast regions or handwritten zones, particularly for diagnostic codes and partially filled checkboxes.
 
 \section{Discussion}
-\textbf{Hypotheses.} (H1) The hybrid pipeline maintains high accuracy on printed text; (H2) a small-data classifier can reliably identify handwritten zones.
+The results confirm that the hybrid, ROI-driven pipeline is effective for structured document extraction.  
+While EasyOCR's handwritten recognition occasionally misclassifies letters, the overall performance is satisfactory given the small dataset and real-world noise.  
+Future work will focus on dynamic ROI correction using contour detection and on integrating a confidence-based verification layer.
 
-\noindent
-\textbf{Support.} H1 is supported (90\% printed extraction). H2 is supported (84\% classifier accuracy), with misclassifications concentrated on block-like handwriting and heavy artefacts.
+\section{Experiments tracking}
+All test results were stored directly in the shared Git repository for traceability.  
+Each experiment produced an Excel file saved under the \texttt{results/} folder, containing the extracted fields and manual validation data.  
+This folder served as a simple yet effective tracking mechanism, allowing all team members to compare outputs and verify improvements across commits.  
 
-\noindent
-\textbf{Threats to validity.} Small sample size; potential selection bias in patches; scanner/camera variability.
-\textbf{Mitigations.} Data augmentation for patches, stricter deskew, and adaptive thresholds tuned per image.
+Given the small dataset and deterministic OCR pipeline, no external experiment-tracking tools (e.g., DVC or MLflow) were required.
 
+
+
+
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \chapter{SWOT Analysis}
 \label{chapter:swot}
 
 
+% ---------------------------------------------------------------------------------------------------------------
+
+
 \chapter{Conclusion and future work}
 \label{chapter:concl}
 
 Try to emphasise the strengths and the weaknesses of your approach.
-What are the major shortcomings of your current method? For each shortcoming, propose additions or enhancements that would help overcome it.
+What are the major shortcomings of your current method? For each shortcoming, propose additions or enhancements that would help overcome it. 
 
-Briefly summarize the important results and conclusions presented in the paper.
+Briefly summarize the important results and conclusions presented in the paper. 
 
 \begin{itemize}
-	\item What are the most important points illustrated by your work?
-	\item How will your results improve future research and applications in the area?
+	\item What are the most important points illustrated by your work? 
+	\item How will your results improve future research and applications in the area? 
 \end{itemize}
 
 
-\chapter{Latex examples}
-
-Item example:
-
-\begin{itemize}
-	\item content of item1
- 	\item content of item2
- 	\item content of item3
-\end{itemize}
-
-
-
-Figure example
-
-$\ldots$ (see Figure \ref{swarmsize})
-
-\begin{figure}[htbp]
-	\centerline{\includegraphics{Fig/FitEvol.eps}}
-	\caption{The evolution of the swarm size during the GA generations. This results were obtained for the $f_2$ test function with 5 dimensions.}
-	\label{swarmsize}
-\end{figure}
-
-
-Table example: (see Table \ref{tab3PSO})
-
-
-\begin{table}[htbp]
-	\caption{The parameters of the PSO algorithm (the micro level algorithm) used to compute the fitness of a GA chromosome.}
-	\label{tab3PSO}
-		\begin{center}
-			\begin{tabular}{p{220pt}c}
-
-				\textbf{Parameter}& \textbf{Value} \\
-				\hline\hline
- 				Number of generations& 50 \\
- 				Number of function evaluations/generation& 10 \\
- 				Number of dimensions of the function to be optimized& 5 \\
- 				Learning factor $c_{1}$& 2 \\
- 				Learning factor $c_{2}$ & 1.8\\
- 				Inertia weight& 0.5 + $\frac{rand()}{2}$\\
-
-			\end{tabular}
-		\end{center}
-\end{table}
-
-Algorithm example
-
-$\ldots$ (see Algorithm \ref{NGalg}).
-
-
-\algsetup{indent=1em, linenosize=\footnotesize}
-
-\begin{algorithm}
-	\caption{SGA - Spin based Genetic AQlgorithm}
-	\label{NGalg}
-		\begin{algorithmic}
-
-
-			\STATE \textbf{BEGIN}
-  		\STATE @ Randomly create the initial GA population.
-  		\STATE @ Compute the fitness of each individual.
-  		\FOR{i=1 TO NoOfGenerations}
-  			\FOR{j=1 TO PopulationSize}
-  				\STATE p $\leftarrow$ RandomlySelectParticleFromGrid();
-  				\STATE n $\leftarrow$ RandomlySelectParticleFromNeighbors(p);
-  				\STATE @ Crossover(p, n, off);
-  				\STATE @ Compute energy $\Delta H$
-  				\IF {$\Delta H$ satisfy the Ising condition}
-  					\STATE @ Replace(p,off);
-  				\ENDIF
-  			\ENDFOR
-  		\ENDFOR
-  		\STATE \textbf{END}
-\end{algorithmic}
-\end{algorithm}
+% ---------------------------------------------------------------------------------------------------------------
 
 
 \bibliographystyle{plain}
