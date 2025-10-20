@@ -575,7 +575,7 @@ def extract_digits(
         guide_ratio = float(cv2.countNonZero(guide_binary)) / float(guide_binary.size)
         guide_peak = cv2.minMaxLoc(guide_blue)[1] if guide_blue.size else 0
         if guide_ratio < 0.0008 and guide_peak < 80:
-            return ""
+            return ("", 0.0) if return_confidence else ""
 
     digits_allowlist = "0123456789"
     candidates = [
