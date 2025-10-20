@@ -1,15 +1,15 @@
 ﻿{
-  "valabil_pentru_luna": {
+  "valabil_pentru_luna_digits": {
     "roi": [
       0.155308,
       0.206512,
       0.181662,
       0.27528
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "Valabil pentru luna (litere)"
   },
-  "valabil_pentru_luna2": {
+  "valabil_pentru_luna_text": {
     "roi": [
       0.152146,
       0.276775,
@@ -19,7 +19,7 @@
     "kind": "text",
     "description": "Valabil pentru luna (camp vecin)"
   },
-  "anu": {
+  "valabil_pentru_anul": {
     "roi": [
       0.155835,
       0.462896,
@@ -49,7 +49,7 @@
     "kind": "digits",
     "description": "CNP titular"
   },
-  "initial": {
+  "initial_checkbox": {
     "roi": [
       0.019939,
       0.774271,
@@ -59,7 +59,7 @@
     "kind": "checkbox",
     "description": "Bifa certificat initial"
   },
-  "in_continuare": {
+  "in_continuare_checkbox": {
     "roi": [
       0.042731,
       0.775331,
@@ -69,17 +69,17 @@
     "kind": "checkbox",
     "description": "Bifa certificat in continuare"
   },
-  "nrinreg": {
+  "nr_inregistrare": {
     "roi": [
       0.337556,
       0.143497,
       0.360952,
       0.272759
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "Numar inregistrare"
   },
-  "dataacordarii": {
+  "data_acordarii": {
     "roi": [
       0.36339,
       0.281054,
@@ -89,7 +89,7 @@
     "kind": "date",
     "description": "Data acordarii"
   },
-  "nrzile": {
+  "nr_zile": {
     "roi": [
       0.361927,
       0.431745,
@@ -99,7 +99,7 @@
     "kind": "digits",
     "description": "Numar zile"
   },
-  "dela": {
+  "de_la": {
     "roi": [
       0.362902,
       0.483588,
@@ -109,7 +109,7 @@
     "kind": "date",
     "description": "De la (data inceput)"
   },
-  "panala": {
+  "pana_la": {
     "roi": [
       0.361989,
       0.632652,
@@ -119,17 +119,17 @@
     "kind": "date",
     "description": "Pana la (data sfarsit)"
   },
-  "coddiagnostic": {
+  "cod_diagnostic": {
     "roi": [
       0.3631,
       0.777559,
       0.386979,
       0.898839
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "Cod diagnostic"
   },
-  "adult": {
+  "adult_checkbox": {
     "roi": [
       0.36246,
       0.901369,
@@ -147,9 +147,9 @@
       0.370273
     ],
     "kind": "text",
-    "description": "CUI unitate"
+    "description": "CUI unitate (cod unic inregistrare)"
   },
-  "codparafa": {
+  "cod_parafa_medic": {
     "roi": [
       0.496513,
       0.43732,
@@ -159,7 +159,7 @@
     "kind": "digits",
     "description": "Cod parafa medic"
   },
-  "codparafamedicsef": {
+  "cod_parafa_medic_sef": {
     "roi": [
       0.495684,
       0.750706,
@@ -169,7 +169,7 @@
     "kind": "digits",
     "description": "Cod parafa medic sef"
   },
-  "urgentamedico": {
+  "cod_urgenta": {
     "roi": [
       0.021545,
       0.530402,
@@ -179,7 +179,7 @@
     "kind": "digits",
     "description": "Cod urgenta medico-chirurgicala"
   },
-  "cnpcopil": {
+  "cnp_copil": {
     "roi": [
       0.246794,
       0.417925,
@@ -189,7 +189,7 @@
     "kind": "digits",
     "description": "CNP copil/pacient"
   },
-  "dataprimirii": {
+  "data_primirii": {
     "roi": [
       0.947266,
       0.777218,
@@ -199,17 +199,27 @@
     "kind": "date",
     "description": "Data primirii"
   },
-  "serieccmat": {
+  "nr_serie_document": {
     "roi": [
       0.128747,
       0.791047,
       0.155402,
       0.9358
     ],
-    "kind": "text",
-    "description": "Serie CCMAT"
+    "kind": "digits",
+    "description": "Nr. Serie CCMAT"
   },
-  "asiguratlacas": {
+  "serie_document": {
+    "roi": [
+      0.129748,
+      0.662043,
+      0.155286,
+      0.759884
+    ],
+    "kind": "text",
+    "description": "Nr. Serie CCMAT"
+  },
+  "evidenta_cas": {
     "roi": [
       0.183358,
       0.279344,
@@ -219,7 +229,7 @@
     "kind": "text",
     "description": "Asigurat la CAS"
   },
-  "casemitenta": {
+  "cas_emitenta": {
     "roi": [
       0.521428,
       0.180692,
@@ -227,6 +237,6 @@
       0.362323
     ],
     "kind": "text",
-    "description": "Casa emitenta"
+    "description": "Casa emitenta CAS"
   }
 }

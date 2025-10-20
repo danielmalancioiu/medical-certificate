@@ -5,15 +5,14 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import easyocr
 import numpy as np
 from PIL import Image
 
-# Initialise EasyOCR once (supports Romanian diacritics)
-reader = easyocr.Reader(["ro", "en"], gpu=True)
+reader = easyocr.Reader(["en"], gpu=True)
 
 # Normalised portrait size used after perspective correction
 TARGET_WIDTH = 1400
@@ -74,23 +73,6 @@ try:
     ROI_SPECS: List[RoiSpec] = _load_roi_specs()
 except Exception as exc:
     raise RuntimeError(f"Failed to load ROI specifications from '{ROI_MAP_PATH}': {exc}") from exc
-
-
-MONTH_MAP = {
-    "ian": "ianuarie",
-    "feb": "februarie",
-    "mar": "martie",
-    "apr": "aprilie",
-    "mai": "mai",
-    "iun": "iunie",
-    "iul": "iulie",
-    "aug": "august",
-    "sep": "septembrie",
-    "oct": "octombrie",
-    "noi": "noiembrie",
-    "dec": "decembrie",
-}
-
 
 def load_image(uploaded_file) -> np.ndarray:
     """Load bytes/PIL image into OpenCV BGR array."""
@@ -256,23 +238,6 @@ def parse_date(raw: str) -> str:
     return raw.strip()
 
 
-def normalise_month(raw: str) -> str:
-    text = raw.lower()
-    text = (
-        text.replace("Äƒ", "a")
-        .replace("Ã¢", "a")
-        .replace("Ã®", "i")
-        .replace("È™", "s")
-        .replace("Å£", "t")
-        .replace("È›", "t")
-    )
-    for key, value in MONTH_MAP.items():
-        if key in text:
-            return value
-    cleaned = re.sub(r"[^a-z]", " ", text).strip()
-    return cleaned
-
-
 def detect_checkbox(image: np.ndarray) -> str:
     if image.size == 0:
         return "nu"
@@ -298,28 +263,8 @@ def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray)
     elif roi.kind == "checkbox":
         value = detect_checkbox(crop_color)
     else:
-        value = run_easyocr(upscale(crop_gray))
-
-    if roi.name in {"luna", "luna_valabil_in_litere"}:
-        value = normalise_month(value)
+        value = run_easyocr(crop_gray)
     return value.strip()
-
-
-def extract_header_fields(ocr_results: Iterable[Tuple[List[List[int]], str, float]]) -> Dict[str, str]:
-    serie = ""
-    numar = ""
-    for _bbox, text, _conf in ocr_results:
-        lowered = text.lower()
-        if "certificat de concediu medical" in lowered:
-            serie_match = re.search(r"Seria\s+([A-Z0-9]+)", text, re.IGNORECASE)
-            numar_match = re.search(r"Nr[:\s]*([0-9]{5,8})", text, re.IGNORECASE)
-            if serie_match:
-                serie = serie_match.group(1)
-            if numar_match:
-                numar = numar_match.group(1)
-            break
-    return {"serie": serie, "numar": numar}
-
 
 def extract_fields(uploaded_file, preview: bool = False):
     """Return structured values and optional ROI preview overlay."""
@@ -331,9 +276,8 @@ def extract_fields(uploaded_file, preview: bool = False):
     gray = preprocess_for_ocr(aligned)
 
     preview_img = aligned.copy()
-    full_text = reader.readtext(cv2.cvtColor(gray, cv2.COLOR_GRAY2RGB), detail=1, paragraph=False)
 
-    extracted = extract_header_fields(full_text)
+    extracted = {}
     for roi in ROI_SPECS:
         extracted[roi.name] = extract_roi_value(roi, aligned, gray)
 

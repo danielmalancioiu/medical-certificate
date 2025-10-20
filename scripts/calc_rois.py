@@ -12,8 +12,8 @@ import re
 from collections import OrderedDict
 from typing import Dict, Iterable, List
 
-TARGET_WIDTH = 1400
-TARGET_HEIGHT = 1980
+TARGET_WIDTH = 560
+TARGET_HEIGHT = 800
 
 
 def _slugify(label: str) -> str:
