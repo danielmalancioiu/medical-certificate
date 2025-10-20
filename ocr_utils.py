@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import cv2
 import easyocr
@@ -27,6 +27,13 @@ class RoiSpec:
     right: float
     kind: str = "text"  # text | digits | date | checkbox
     description: Optional[str] = None
+    margin: Optional[float] = None
+    auto_trim: Optional[float] = None
+    expected_length: Optional[int] = None
+    min_length: Optional[int] = None
+    max_length: Optional[int] = None
+    allowlist: Optional[str] = None
+    preferred_ink: Optional[str] = None
 
 
 # ROI map approximated on an aligned reference certificate.
@@ -53,6 +60,12 @@ def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
             raise ValueError(f"ROI '{name}' must define 'roi' as a list of four numbers.")
 
         top, left, bottom, right = coords
+        margin_value = payload.get("margin")
+        auto_trim_value = payload.get("auto_trim")
+        expected_length = payload.get("expected_length")
+        min_length = payload.get("min_length")
+        max_length = payload.get("max_length")
+
         specs.append(
             RoiSpec(
                 name=name,
@@ -62,6 +75,13 @@ def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
                 right=float(right),
                 kind=payload.get("kind", "text"),
                 description=payload.get("description"),
+                margin=float(margin_value) if margin_value is not None else None,
+                auto_trim=float(auto_trim_value) if auto_trim_value is not None else None,
+                expected_length=int(expected_length) if expected_length is not None else None,
+                min_length=int(min_length) if min_length is not None else None,
+                max_length=int(max_length) if max_length is not None else None,
+                allowlist=payload.get("allowlist"),
+                preferred_ink=payload.get("preferred_ink"),
             )
         )
 
@@ -110,24 +130,47 @@ def align_certificate(image: np.ndarray) -> Tuple[np.ndarray, bool]:
         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
+        image_area = float(resized.shape[0] * resized.shape[1])
+        min_area_ratio = 0.45  # require the detected contour to cover most of the page
+
         for contour in contours[:5]:
             peri = cv2.arcLength(contour, True)
             approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-            if len(approx) == 4:
-                pts = approx.reshape(4, 2).astype("float32") / ratio
-                ordered = order_points(pts)
-                target = np.array(
-                    [
-                        [0, 0],
-                        [TARGET_WIDTH - 1, 0],
-                        [TARGET_WIDTH - 1, TARGET_HEIGHT - 1],
-                        [0, TARGET_HEIGHT - 1],
-                    ],
-                    dtype="float32",
-                )
-                matrix = cv2.getPerspectiveTransform(ordered, target)
-                warped = cv2.warpPerspective(image, matrix, (TARGET_WIDTH, TARGET_HEIGHT))
-                return warped, True
+            if len(approx) != 4:
+                continue
+
+            contour_area = cv2.contourArea(approx)
+            if contour_area <= 0 or (contour_area / image_area) < min_area_ratio:
+                continue
+
+            pts = approx.reshape(4, 2).astype("float32") / ratio
+            ordered = order_points(pts)
+
+            # Reject candidates with implausible aspect ratios to avoid warping noise
+            width_top = np.linalg.norm(ordered[1] - ordered[0])
+            width_bottom = np.linalg.norm(ordered[2] - ordered[3])
+            height_left = np.linalg.norm(ordered[3] - ordered[0])
+            height_right = np.linalg.norm(ordered[2] - ordered[1])
+
+            avg_width = max((width_top + width_bottom) * 0.5, 1.0)
+            avg_height = max((height_left + height_right) * 0.5, 1.0)
+            aspect_ratio = avg_height / avg_width
+            target_ratio = TARGET_HEIGHT / TARGET_WIDTH
+            if aspect_ratio < target_ratio * 0.55 or aspect_ratio > target_ratio * 1.45:
+                continue
+
+            target = np.array(
+                [
+                    [0, 0],
+                    [TARGET_WIDTH - 1, 0],
+                    [TARGET_WIDTH - 1, TARGET_HEIGHT - 1],
+                    [0, TARGET_HEIGHT - 1],
+                ],
+                dtype="float32",
+            )
+            matrix = cv2.getPerspectiveTransform(ordered, target)
+            warped = cv2.warpPerspective(image, matrix, (TARGET_WIDTH, TARGET_HEIGHT))
+            return warped, True
     except Exception:
         pass
 
@@ -174,6 +217,75 @@ def shrink_crop(image: np.ndarray, margin_ratio: float) -> np.ndarray:
     if bottom <= top or right <= left:
         return image
     return image[top:bottom, left:right]
+
+
+def auto_trim_borders(
+    image: np.ndarray,
+    max_fraction: Optional[float] = None,
+    intensity_threshold: float = 200.0,
+    variance_threshold: float = 28.0,
+) -> np.ndarray:
+    """Remove dark printed borders heuristically while keeping handwriting intact."""
+    if image.size == 0:
+        return image
+
+    if max_fraction is None or max_fraction <= 0:
+        return image
+
+    max_fraction = max(0.0, min(max_fraction, 0.45))
+    if image.ndim == 3:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image
+
+    height, width = gray.shape[:2]
+    if height < 8 or width < 8:
+        return image
+
+    row_mean = gray.mean(axis=1)
+    row_std = gray.std(axis=1)
+    col_mean = gray.mean(axis=0)
+    col_std = gray.std(axis=0)
+
+    max_row_trim = max(1, int(round(height * max_fraction)))
+    max_col_trim = max(1, int(round(width * max_fraction)))
+
+    def _trim_from_start(mean_arr: np.ndarray, std_arr: np.ndarray, limit: int) -> int:
+        trimmed = 0
+        for mean_val, std_val in zip(mean_arr, std_arr):
+            if trimmed >= limit:
+                break
+            if mean_val < intensity_threshold and std_val < variance_threshold:
+                trimmed += 1
+            else:
+                break
+        return trimmed
+
+    def _trim_from_end(mean_arr: np.ndarray, std_arr: np.ndarray, limit: int) -> int:
+        trimmed = 0
+        for mean_val, std_val in zip(reversed(mean_arr), reversed(std_arr)):
+            if trimmed >= limit:
+                break
+            if mean_val < intensity_threshold and std_val < variance_threshold:
+                trimmed += 1
+            else:
+                break
+        return trimmed
+
+    top_trim = _trim_from_start(row_mean, row_std, max_row_trim)
+    bottom_trim = _trim_from_end(row_mean, row_std, max_row_trim)
+    left_trim = _trim_from_start(col_mean, col_std, max_col_trim)
+    right_trim = _trim_from_end(col_mean, col_std, max_col_trim)
+
+    y1 = top_trim
+    y2 = height - bottom_trim
+    x1 = left_trim
+    x2 = width - right_trim
+
+    if y2 <= y1 or x2 <= x1:
+        return image
+
+    return image[y1:y2, x1:x2]
 
 
 def remove_grid_lines(image: np.ndarray) -> np.ndarray:
@@ -389,10 +501,64 @@ def read_digits_with_confidence(
     return "", best_confidence
 
 
-def extract_digits(image: np.ndarray) -> str:
+def choose_best_digit_candidate(
+    candidates: List[Tuple[str, float]],
+    expected_length: Optional[int] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+) -> Tuple[str, float]:
+    """Pick the digit string that best matches length hints and OCR confidence."""
+    best_digits = ""
+    best_confidence = 0.0
+    best_score = float("-inf")
+    seen: set[Tuple[str, int]] = set()
+
+    for raw_digits, confidence in candidates:
+        digits = re.sub(r"[^0-9]", "", raw_digits)
+        if max_length is not None and len(digits) > max_length:
+            digits = digits[:max_length]
+        if not digits:
+            continue
+
+        key = (digits, int(round(confidence * 1000)))
+        if key in seen:
+            continue
+        seen.add(key)
+
+        length = len(digits)
+        score = float(confidence)
+
+        if expected_length is not None:
+            score -= abs(length - expected_length) * 0.28
+            if length == expected_length:
+                score += 0.35
+        else:
+            score += min(length * 0.05, 0.3)
+
+        if min_length is not None and length < min_length:
+            score -= (min_length - length) * 0.25
+        if max_length is not None and length > max_length:
+            score -= (length - max_length) * 0.2
+
+        if score > best_score:
+            best_score = score
+            best_digits = digits
+            best_confidence = confidence
+
+    return best_digits, best_confidence
+
+
+def extract_digits(
+    image: np.ndarray,
+    expected_length: Optional[int] = None,
+    min_length: Optional[int] = None,
+    max_length: Optional[int] = None,
+    return_confidence: bool = False,
+) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
-        return ""
-    if len(image.shape) == 3:
+        return ("", 0.0) if return_confidence else ""
+
+    if image.ndim == 3:
         color = image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     else:
@@ -440,7 +606,7 @@ def extract_digits(image: np.ndarray) -> str:
         guide_ratio = float(cv2.countNonZero(guide_binary)) / float(guide_binary.size)
         guide_peak = cv2.minMaxLoc(guide_blue)[1] if guide_blue.size else 0
         if guide_ratio < 0.0008 and guide_peak < 80:
-            return ""
+            return ("", 0.0) if return_confidence else ""
 
     digits_allowlist = "0123456789"
     candidates = [
@@ -462,8 +628,7 @@ def extract_digits(image: np.ndarray) -> str:
         {"image": cv2.bitwise_not(guide_binary_clean), "scale": 3.2},
     ]
 
-    best_digits = ""
-    best_confidence = 0.0
+    results: List[Tuple[str, float]] = []
 
     for candidate in candidates:
         candidate_image = candidate["image"]
@@ -475,13 +640,15 @@ def extract_digits(image: np.ndarray) -> str:
             min_confidence=0.55,
         )
         if digits and confidence >= 0.58:
-            return digits
-        if digits and confidence > best_confidence:
-            best_digits = digits
-            best_confidence = confidence
+            normalized = re.sub(r"[^0-9]", "", digits)
+            if max_length is not None and len(normalized) > max_length:
+                normalized = normalized[:max_length]
+            if expected_length and len(normalized) == expected_length:
+                return (normalized, confidence) if return_confidence else normalized
+        if digits:
+            results.append((digits, confidence))
 
-    if best_confidence >= 0.48 and best_digits:
-        return best_digits
+    secondary_results: List[Tuple[str, float]] = []
 
     for candidate in candidates:
         candidate_image = candidate["image"]
@@ -493,21 +660,37 @@ def extract_digits(image: np.ndarray) -> str:
             min_confidence=0.4,
         )
         if digits and confidence >= 0.5:
-            return digits
-        if digits and confidence > best_confidence:
-            best_digits = digits
-            best_confidence = confidence
+            normalized = re.sub(r"[^0-9]", "", digits)
+            if max_length is not None and len(normalized) > max_length:
+                normalized = normalized[:max_length]
+            if expected_length and len(normalized) == expected_length:
+                return (normalized, confidence) if return_confidence else normalized
+        if digits:
+            secondary_results.append((digits, confidence))
 
-    if best_confidence >= 0.42 and best_digits:
-        return best_digits
+    results.extend(secondary_results)
 
     if ink_ratio >= 0.0015:
-        fallback_text = run_easyocr(upscale(cv2.bitwise_not(binary_clean), factor=3.0), allowlist=digits_allowlist)
+        fallback_text = run_easyocr(
+            upscale(cv2.bitwise_not(binary_clean), factor=3.0),
+            allowlist=digits_allowlist,
+        )
         fallback_digits = re.sub(r"[^0-9]", "", fallback_text)
         if fallback_digits:
-            return fallback_digits
+            results.append((fallback_digits, 0.38))
 
-    return best_digits if best_confidence > 0 else ""
+    if not results:
+        return ("", 0.0) if return_confidence else ""
+
+    best_digits, best_conf = choose_best_digit_candidate(
+        results,
+        expected_length,
+        min_length,
+        max_length,
+    )
+    if return_confidence:
+        return best_digits, best_conf
+    return best_digits
 
 
 def _cnp_checksum_ok(digits: str) -> bool:
@@ -639,6 +822,18 @@ def extract_cnp(image: np.ndarray) -> str:
     except Exception:
         box_fallback = ""
 
+    digits, conf = extract_digits(
+        image,
+        expected_length=13,
+        min_length=11,
+        max_length=13,
+        return_confidence=True,
+    )
+    if len(digits) == 13 and _cnp_checksum_ok(digits):
+        return digits
+    if len(digits) == 13 and conf >= 0.45:
+        return digits
+
     # Reuse the rich candidate set from digit extraction, but be more permissive
     # with thresholds and add a couple of morphological joins to connect strokes.
     if image.ndim == 3:
@@ -692,7 +887,12 @@ def extract_cnp(image: np.ndarray) -> str:
             best = digits
 
     # Last attempt: use generic extract_digits and validate
-    fallback = extract_digits(image)
+    fallback = extract_digits(
+        image,
+        expected_length=13,
+        min_length=11,
+        max_length=13,
+    )
     chosen = _best_13_digit_substring(fallback)
     if _cnp_checksum_ok(chosen):
         return chosen
@@ -700,9 +900,13 @@ def extract_cnp(image: np.ndarray) -> str:
         return chosen
     return box_fallback
 
-def extract_text(image: np.ndarray) -> str:
+def extract_text(
+    image: np.ndarray,
+    allowlist: Optional[str] = None,
+    return_confidence: bool = False,
+) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
-        return ""
+        return ("", 0.0) if return_confidence else ""
 
     if image.ndim == 3:
         color = image
@@ -751,39 +955,40 @@ def extract_text(image: np.ndarray) -> str:
     guide_closed = cv2.morphologyEx(guide_adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
     guide_clean = remove_grid_lines(guide_adaptive)
 
-    text_allowlist = (
+    base_allowlist = (
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz-_/.,"
     )
+    primary_allowlist = allowlist if allowlist is not None else base_allowlist
 
     candidates = [
         {"image": gray, "scale": 2.0, "min_conf": 0.38, "allowlist": None},
         {"image": gray_clahe, "scale": 2.2, "min_conf": 0.4, "allowlist": None},
         {"image": dark_enhanced, "scale": 2.3, "min_conf": 0.4, "allowlist": None},
-        {"image": cv2.bitwise_not(adaptive), "scale": 2.6, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": adaptive, "scale": 2.6, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": cv2.bitwise_not(closed), "scale": 2.8, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": closed, "scale": 2.8, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": cv2.bitwise_not(cleaned_grid), "scale": 2.8, "min_conf": 0.42, "allowlist": text_allowlist},
-        {"image": cleaned_grid, "scale": 2.8, "min_conf": 0.42, "allowlist": text_allowlist},
+        {"image": cv2.bitwise_not(adaptive), "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": adaptive, "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": cv2.bitwise_not(closed), "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": closed, "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": cv2.bitwise_not(cleaned_grid), "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
+        {"image": cleaned_grid, "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
         {"image": guide_gray, "scale": 2.2, "min_conf": 0.38, "allowlist": None},
         {"image": guide_clahe, "scale": 2.4, "min_conf": 0.4, "allowlist": None},
         {"image": guide_dark, "scale": 2.5, "min_conf": 0.4, "allowlist": None},
-        {"image": guide_blue, "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": guide_adaptive, "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": cv2.bitwise_not(guide_adaptive), "scale": 2.7, "min_conf": 0.45, "allowlist": text_allowlist},
-        {"image": guide_closed, "scale": 2.9, "min_conf": 0.46, "allowlist": text_allowlist},
-        {"image": cv2.bitwise_not(guide_closed), "scale": 2.9, "min_conf": 0.46, "allowlist": text_allowlist},
-        {"image": guide_clean, "scale": 2.9, "min_conf": 0.44, "allowlist": text_allowlist},
-        {"image": cv2.bitwise_not(guide_clean), "scale": 2.9, "min_conf": 0.44, "allowlist": text_allowlist},
+        {"image": guide_blue, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": guide_adaptive, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": cv2.bitwise_not(guide_adaptive), "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"image": guide_closed, "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
+        {"image": cv2.bitwise_not(guide_closed), "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
+        {"image": guide_clean, "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
+        {"image": cv2.bitwise_not(guide_clean), "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
     ]
 
     if np.count_nonzero(blue_enhanced) > 0:
         candidates.append(
-            {"image": blue_enhanced, "scale": 2.7, "min_conf": 0.46, "allowlist": text_allowlist}
+            {"image": blue_enhanced, "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
         )
         candidates.append(
-            {"image": cv2.bitwise_not(blue_enhanced), "scale": 2.7, "min_conf": 0.46, "allowlist": text_allowlist}
+            {"image": cv2.bitwise_not(blue_enhanced), "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
         )
 
     best_text = ""
@@ -793,16 +998,16 @@ def extract_text(image: np.ndarray) -> str:
         candidate_image = candidate["image"]
         factor = candidate.get("scale", 2.0)
         min_conf = candidate.get("min_conf", 0.35)
-        allowlist = candidate.get("allowlist")
+        candidate_allowlist = candidate.get("allowlist")
         scaled = upscale(candidate_image, factor=factor)
         text, confidence = read_text_with_confidence(
             scaled,
-            allowlist=allowlist,
+            allowlist=candidate_allowlist,
             min_confidence=min_conf,
         )
         cleaned_text = tidy_text(text)
         if cleaned_text and confidence >= (min_conf + 0.05):
-            return cleaned_text
+            return (cleaned_text, confidence) if return_confidence else cleaned_text
         if cleaned_text:
             better_conf = confidence > best_confidence + 0.02
             similar_conf = abs(confidence - best_confidence) <= 0.02 and len(cleaned_text) > len(best_text)
@@ -811,9 +1016,17 @@ def extract_text(image: np.ndarray) -> str:
                 best_confidence = confidence
 
     if best_text:
-        return best_text
+        return (best_text, best_confidence) if return_confidence else best_text
 
-    fallback = tidy_text(run_easyocr(upscale(gray, factor=2.4)))
+    fallback = tidy_text(
+        run_easyocr(
+            upscale(gray, factor=2.4),
+            allowlist=allowlist,
+        )
+    )
+    if return_confidence:
+        fallback_conf = 0.25 if fallback else 0.0
+        return fallback, fallback_conf
     return fallback
 
 
@@ -834,12 +1047,30 @@ def format_date_from_digits(digits: str) -> Optional[str]:
     return None
 
 
-def extract_date(image: np.ndarray) -> str:
-    digits = extract_digits(image)
+def extract_date(
+    image: np.ndarray,
+    expected_length: int = 6,
+    return_confidence: bool = False,
+) -> Union[str, Tuple[str, float]]:
+    digits, digits_conf = extract_digits(
+        image,
+        expected_length=expected_length,
+        min_length=expected_length,
+        max_length=expected_length,
+        return_confidence=True,
+    )
     formatted = format_date_from_digits(digits)
+    final_conf = digits_conf
     if formatted:
+        if return_confidence:
+            return formatted, final_conf
         return formatted
-    return digits[:6]
+    trimmed = re.sub(r"[^0-9]", "", digits)
+    if expected_length and len(trimmed) >= expected_length:
+        trimmed = trimmed[:expected_length]
+    if return_confidence:
+        return trimmed, final_conf
+    return trimmed
 
 
 def parse_date(raw: str) -> str:
@@ -850,9 +1081,9 @@ def parse_date(raw: str) -> str:
     return digits[:6].strip()
 
 
-def detect_checkbox(image: np.ndarray) -> str:
+def detect_checkbox(image: np.ndarray, return_confidence: bool = False) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
-        return "false"
+        return ("false", 0.0) if return_confidence else "false"
     if image.ndim == 3:
         color = image
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -863,6 +1094,7 @@ def detect_checkbox(image: np.ndarray) -> str:
     inner = shrink_crop(color, margin_ratio=0.12)
     if inner.size == 0:
         inner = color
+    inner = auto_trim_borders(inner, max_fraction=0.2, intensity_threshold=210.0, variance_threshold=22.0)
 
     cleaned = suppress_guidelines(inner)
     if cleaned.ndim == 3:
@@ -882,53 +1114,126 @@ def detect_checkbox(image: np.ndarray) -> str:
     height, width = strokes.shape[:2]
     total_area = float(height * width)
     if total_area == 0:
-        return "false"
+        return ("false", 0.0) if return_confidence else "false"
 
     num_labels, _, stats, _ = cv2.connectedComponentsWithStats(strokes, connectivity=8)
     significant_area = 0.0
     elongated_component = False
+    max_component_area = 0.0
     for idx in range(1, num_labels):
         area = float(stats[idx, cv2.CC_STAT_AREA])
         if area < 12:
             continue
         significant_area += area
+        if area > max_component_area:
+            max_component_area = area
         w = stats[idx, cv2.CC_STAT_WIDTH]
         h = stats[idx, cv2.CC_STAT_HEIGHT]
         if w >= 0.35 * width or h >= 0.35 * height:
             elongated_component = True
 
     ink_ratio = significant_area / total_area
-    if ink_ratio >= 0.012 or (ink_ratio >= 0.006 and elongated_component):
-        return "true"
-    return "false"
+    if significant_area <= 0:
+        return ("false", 0.0) if return_confidence else "false"
+
+    core_margin = max(1, int(round(min(height, width) * 0.18)))
+    if core_margin * 2 >= min(height, width):
+        core_margin = max(1, min(height, width) // 3)
+    core = strokes[core_margin: height - core_margin, core_margin: width - core_margin]
+    if core.size == 0:
+        core = strokes
+    core_non_zero = float(cv2.countNonZero(core))
+    core_ratio = core_non_zero / total_area
+    edge_ratio = max(0.0, ink_ratio - core_ratio)
+
+    central_strength = core_non_zero >= 14 and core_ratio >= 0.0028
+    edge_dominant = edge_ratio > core_ratio * 1.2
+
+    diagonal_presence = False
+    if max_component_area >= min(24.0, total_area * 0.02):
+        dilated = cv2.dilate(strokes, np.ones((3, 3), np.uint8), iterations=1)
+        edges = cv2.Canny(dilated, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(
+            edges,
+            rho=1,
+            theta=np.pi / 180,
+            threshold=18,
+            minLineLength=min(width, height) * 0.4,
+            maxLineGap=4,
+        )
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                dx = x2 - x1
+                dy = y2 - y1
+                if dx == 0 and dy == 0:
+                    continue
+                angle = abs(np.degrees(np.arctan2(dy, dx)))
+                angle = min(angle, 180 - angle)
+                if 30 <= angle <= 60:
+                    diagonal_presence = True
+                    break
+
+    if elongated_component and central_strength and not edge_dominant and ink_ratio >= 0.006:
+        confidence = min(1.0, max(0.45, ink_ratio * 90))
+        if diagonal_presence:
+            confidence = min(1.0, confidence + 0.1)
+        return ("true", confidence) if return_confidence else "true"
+
+    if central_strength and not edge_dominant and (ink_ratio >= 0.007 or diagonal_presence):
+        confidence = min(1.0, max(0.4, ink_ratio * 80 + (0.15 if diagonal_presence else 0.0)))
+        return ("true", confidence) if return_confidence else "true"
+
+    confidence = max(0.0, min(0.4, core_ratio * 40))
+    return ("false", confidence) if return_confidence else "false"
 
 
 def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray) -> str:
     height, width = gray_img.shape[:2]
     y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
     crop_color = color_img[y1:y2, x1:x2]
-    margin_map = {
+    margin_defaults = {
         "digits": 0.06,
         "date": 0.06,
         "checkbox": 0.08,
         "text": 0.05,
     }
-    margin = margin_map.get(roi.kind, 0.05)
-    if roi.name in {"cnp", "cnp_copil"}:
+    auto_trim_defaults = {
+        "digits": None,
+        "date": None,
+        "checkbox": 0.18,
+        "text": None,
+    }
+    margin = roi.margin if roi.margin is not None else margin_defaults.get(roi.kind, 0.05)
+    if roi.name in {"cnp", "cnp_copil"} and roi.margin is None:
         margin = 0.02
-    crop_color = shrink_crop(crop_color, margin_ratio=margin)
+    if margin and margin > 0:
+        crop_color = shrink_crop(crop_color, margin_ratio=margin)
+
+    auto_trim_fraction = roi.auto_trim if roi.auto_trim is not None else auto_trim_defaults.get(roi.kind)
+    if auto_trim_fraction and auto_trim_fraction > 0:
+        crop_color = auto_trim_borders(crop_color, max_fraction=auto_trim_fraction)
 
     if roi.kind == "digits":
         if roi.name in {"cnp", "cnp_copil"}:
             value = extract_cnp(crop_color)
         else:
-            value = extract_digits(crop_color)
+            expected = roi.expected_length
+            min_len = roi.min_length if roi.min_length is not None else expected
+            max_len = roi.max_length if roi.max_length is not None else expected
+            value = extract_digits(
+                crop_color,
+                expected_length=expected,
+                min_length=min_len,
+                max_length=max_len,
+            )
     elif roi.kind == "date":
-        value = extract_date(crop_color)
+        expected = roi.expected_length if roi.expected_length is not None else 6
+        value = extract_date(crop_color, expected_length=expected)
     elif roi.kind == "checkbox":
         value = detect_checkbox(crop_color)
     else:
-        value = extract_text(crop_color)
+        value = extract_text(crop_color, allowlist=roi.allowlist)
     return value.strip()
 
 def extract_fields(
@@ -991,4 +1296,3 @@ def extract_fields(
         return preview_img, extracted
 
     return extracted
-
