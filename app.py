@@ -70,8 +70,24 @@ if uploaded_file:
     file_bytes = uploaded_file.getvalue()
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
-    with st.spinner(texts["processing"]):
-        preview_image, extracted = extract_fields(io.BytesIO(file_bytes), preview=True)
+    progress_status = st.empty()
+    progress_bar_container = st.empty()
+    progress_bar = progress_bar_container.progress(0)
+    progress_status.text(texts["processing"])
+
+    def report_progress(fraction: float, message: str) -> None:
+        progress_value = max(0, min(100, int(round(fraction * 100))))
+        progress_bar.progress(progress_value)
+        progress_status.text(message)
+
+    preview_image, extracted = extract_fields(
+        io.BytesIO(file_bytes),
+        preview=True,
+        progress_callback=report_progress,
+    )
+
+    progress_bar_container.empty()
+    progress_status.empty()
 
     results_df = pd.DataFrame([extracted])
 

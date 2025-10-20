@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import cv2
 import easyocr
@@ -931,20 +931,47 @@ def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray)
         value = extract_text(crop_color)
     return value.strip()
 
-def extract_fields(uploaded_file, preview: bool = False):
+def extract_fields(
+    uploaded_file,
+    preview: bool = False,
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+):
     """Return structured values and optional ROI preview overlay."""
+    total_roi = len(ROI_SPECS)
+    base_steps = 3.0
+    total_steps = float(max(total_roi + base_steps, 1.0))
+    completed = 0.0
+
+    def advance(message: str, weight: float = 1.0) -> None:
+        nonlocal completed
+        completed += weight
+        fraction = min(max(completed / total_steps, 0.0), 1.0)
+        if progress_callback:
+            progress_callback(fraction, message)
+
+    if progress_callback:
+        progress_callback(0.0, "Reading uploaded image")
+
     original = load_image(uploaded_file)
+    advance("Loaded image data")
     aligned, warped = align_certificate(original)
+    align_message = "Aligned certificate" if warped else "Resized certificate"
+    advance(align_message)
     if not warped:
         aligned = cv2.resize(original, (TARGET_WIDTH, TARGET_HEIGHT), interpolation=cv2.INTER_CUBIC)
 
     gray = preprocess_for_ocr(aligned)
+    advance("Prepared image for OCR analysis")
 
     preview_img = aligned.copy()
 
     extracted = {}
     for roi in ROI_SPECS:
         extracted[roi.name] = extract_roi_value(roi, aligned, gray)
+        advance(f"Processed ROI: {roi.name}", weight=1.0)
+
+    if progress_callback:
+        progress_callback(1.0, "Extraction complete")
 
     if preview:
         height, width = gray.shape[:2]
