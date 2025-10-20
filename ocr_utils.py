@@ -510,6 +510,196 @@ def extract_digits(image: np.ndarray) -> str:
     return best_digits if best_confidence > 0 else ""
 
 
+def _cnp_checksum_ok(digits: str) -> bool:
+    if len(digits) != 13 or not digits.isdigit():
+        return False
+    weights = [2, 7, 9, 1, 4, 6, 3, 5, 8, 2, 7, 9]
+    total = sum(int(digits[i]) * weights[i] for i in range(12))
+    control = total % 11
+    if control == 10:
+        control = 1
+    return int(digits[12]) == control
+
+
+def _best_13_digit_substring(raw: str) -> str:
+    longest = ""
+    best_valid = ""
+    for i in range(0, max(0, len(raw) - 12)):
+        candidate = raw[i : i + 13]
+        if not candidate.isdigit():
+            continue
+        if len(candidate) > len(longest):
+            longest = candidate
+        if _cnp_checksum_ok(candidate):
+            return candidate
+    return best_valid or longest
+
+
+def _trim_to_content(gray: np.ndarray) -> np.ndarray:
+    """Trim uniform margins by locating columns/rows with ink.
+
+    Works on a single-channel image. Returns the cropped gray image. If
+    detection fails, returns the original image.
+    """
+    if gray.size == 0:
+        return gray
+    if gray.ndim == 3:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+    # Invert binary so ink is 1s
+    blur = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, binary = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    cols = np.sum(binary > 0, axis=0)
+    rows = np.sum(binary > 0, axis=1)
+    if not np.any(cols) or not np.any(rows):
+        return gray
+    col_indices = np.where(cols > 0)[0]
+    row_indices = np.where(rows > 0)[0]
+    x1, x2 = int(col_indices[0]), int(col_indices[-1])
+    y1, y2 = int(row_indices[0]), int(row_indices[-1])
+    # small padding
+    pad_x = max(1, (x2 - x1) // 40)
+    pad_y = max(1, (y2 - y1) // 10)
+    x1 = max(0, x1 - pad_x)
+    x2 = min(gray.shape[1], x2 + pad_x)
+    y1 = max(0, y1 - pad_y)
+    y2 = min(gray.shape[0], y2 + pad_y)
+    if x2 <= x1 or y2 <= y1:
+        return gray
+    return gray[y1:y2, x1:x2]
+
+
+def _cnp_try_single_digit_fix(digits: str, confidences: List[float]) -> str:
+    """Try correcting one position (lowest confidence first) to satisfy checksum."""
+    if len(digits) != 13 or not digits.isdigit():
+        return ""
+    order = sorted(range(13), key=lambda i: confidences[i] if i < len(confidences) else 0.0)
+    for idx in order:
+        original = digits[idx]
+        for d in "0123456789":
+            if d == original:
+                continue
+            test = digits[:idx] + d + digits[idx + 1 :]
+            if _cnp_checksum_ok(test):
+                return test
+    return ""
+
+
+def extract_cnp(image: np.ndarray) -> str:
+    """Specialised extractor for Romanian CNP (13 digits with checksum).
+
+    Tries multiple preprocessing variants, prefers a 13-digit substring that
+    passes checksum; otherwise returns the longest 13-digit run found.
+    """
+    if image.size == 0:
+        return ""
+
+    # 1) Try a simple 13-cell segmentation pass. Many forms print 13 small
+    # boxes; slicing evenly is often sufficient and robust to stamps.
+    try:
+        if image.ndim == 3:
+            color = image
+            gray_base = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        else:
+            gray_base = image.copy()
+            color = cv2.cvtColor(gray_base, cv2.COLOR_GRAY2BGR)
+
+        # Trim to content to align 13 equal segments better
+        gray_base = _trim_to_content(gray_base)
+        height, width = gray_base.shape[:2]
+        if width >= 130 and height >= 16:
+            per = max(1, width // 13)
+            assembled: List[str] = []
+            confs: List[float] = []
+            for idx in range(13):
+                x1 = idx * per
+                x2 = width if idx == 12 else (idx + 1) * per
+                w_slice = gray_base[:, x1:x2]
+                # Tighten margins a bit
+                inner = shrink_crop(w_slice, margin_ratio=0.08)
+                if inner.size == 0:
+                    inner = w_slice
+                scaled = upscale(inner, factor=2.8)
+                digit, conf = read_digits_with_confidence(scaled, allowlist="0123456789", min_confidence=0.28)
+                digit = re.sub(r"[^0-9]", "", digit)[:1]
+                assembled.append(digit if digit else "")
+                confs.append(float(conf) if digit else 0.0)
+            candidate = "".join(assembled)
+            if len(candidate) == 13 and _cnp_checksum_ok(candidate):
+                return candidate
+            if len(candidate) == 13 and candidate.isdigit():
+                fixed = _cnp_try_single_digit_fix(candidate, confs)
+                if fixed:
+                    return fixed
+                # Keep as fallback if later passes fail
+                box_fallback = candidate
+            else:
+                box_fallback = ""
+        else:
+            box_fallback = ""
+    except Exception:
+        box_fallback = ""
+
+    # Reuse the rich candidate set from digit extraction, but be more permissive
+    # with thresholds and add a couple of morphological joins to connect strokes.
+    if image.ndim == 3:
+        color = image
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    else:
+        gray = image.copy()
+        color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+
+    guide_suppressed = suppress_guidelines(color)
+    if guide_suppressed.ndim == 3:
+        guide_gray = cv2.cvtColor(guide_suppressed, cv2.COLOR_BGR2GRAY)
+    else:
+        guide_gray = guide_suppressed
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+    guide_clahe = clahe.apply(guide_gray)
+
+    # Binary versions that frequently work well for boxed sequences
+    blur = cv2.GaussianBlur(gray_clahe, (3, 3), 0)
+    adaptive = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 9)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    joined = cv2.morphologyEx(adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    candidates = [
+        {"image": gray, "scale": 2.4},
+        {"image": gray_clahe, "scale": 2.6},
+        {"image": guide_gray, "scale": 2.6},
+        {"image": guide_clahe, "scale": 2.8},
+        {"image": adaptive, "scale": 3.0},
+        {"image": cv2.bitwise_not(adaptive), "scale": 3.0},
+        {"image": joined, "scale": 3.0},
+        {"image": cv2.bitwise_not(joined), "scale": 3.0},
+    ]
+
+    best = ""
+    for cand in candidates:
+        scaled = upscale(cand["image"], factor=cand.get("scale", 2.5))
+        text, conf = read_digits_with_confidence(scaled, allowlist="0123456789", min_confidence=0.35)
+        digits = re.sub(r"[^0-9]", "", text)
+        if len(digits) >= 13:
+            chosen = _best_13_digit_substring(digits)
+            if _cnp_checksum_ok(chosen):
+                return chosen
+            if len(chosen) == 13 and len(best) != 13:
+                best = chosen
+            elif len(chosen) > len(best):
+                best = chosen
+        elif len(digits) > len(best):
+            best = digits
+
+    # Last attempt: use generic extract_digits and validate
+    fallback = extract_digits(image)
+    chosen = _best_13_digit_substring(fallback)
+    if _cnp_checksum_ok(chosen):
+        return chosen
+    if chosen:
+        return chosen
+    return box_fallback
+
 def extract_text(image: np.ndarray) -> str:
     if image.size == 0:
         return ""
@@ -724,10 +914,15 @@ def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray)
         "text": 0.05,
     }
     margin = margin_map.get(roi.kind, 0.05)
+    if roi.name in {"cnp", "cnp_copil"}:
+        margin = 0.02
     crop_color = shrink_crop(crop_color, margin_ratio=margin)
 
     if roi.kind == "digits":
-        value = extract_digits(crop_color)
+        if roi.name in {"cnp", "cnp_copil"}:
+            value = extract_cnp(crop_color)
+        else:
+            value = extract_digits(crop_color)
     elif roi.kind == "date":
         value = extract_date(crop_color)
     elif roi.kind == "checkbox":
