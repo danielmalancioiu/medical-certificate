@@ -788,6 +788,20 @@ def extract_cnp(image: np.ndarray) -> str:
     except Exception:
         box_fallback = ""
 
+    # Quick pass using the generic digit extractor first. This already runs the
+    # multipass pipeline and prefers 13-digit outputs when hinted.
+    digits, conf = extract_digits(
+        image,
+        expected_length=13,
+        min_length=11,
+        max_length=13,
+        return_confidence=True,
+    )
+    if len(digits) == 13 and _cnp_checksum_ok(digits):
+        return digits
+    if len(digits) == 13 and conf >= 0.45:
+        return digits
+
     # Reuse the rich candidate set from digit extraction, but be more permissive
     # with thresholds and add a couple of morphological joins to connect strokes.
     if image.ndim == 3:
@@ -841,7 +855,12 @@ def extract_cnp(image: np.ndarray) -> str:
             best = digits
 
     # Last attempt: use generic extract_digits and validate
-    fallback = extract_digits(image)
+    fallback = extract_digits(
+        image,
+        expected_length=13,
+        min_length=11,
+        max_length=13,
+    )
     chosen = _best_13_digit_substring(fallback)
     if _cnp_checksum_ok(chosen):
         return chosen
