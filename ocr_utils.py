@@ -5,7 +5,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
 import easyocr
@@ -92,6 +92,29 @@ try:
     ROI_SPECS: List[RoiSpec] = _load_roi_specs()
 except Exception as exc:
     raise RuntimeError(f"Failed to load ROI specifications from '{ROI_MAP_PATH}': {exc}") from exc
+
+def _record_debug_image(
+    store: Optional[Dict[str, List[dict]]],
+    roi_name: Optional[str],
+    label: str,
+    image: Optional[np.ndarray],
+    note: Optional[str] = None,
+) -> None:
+    """Store a copy of an intermediate image for later inspection."""
+    if store is None or roi_name is None or image is None:
+        return
+    try:
+        display = image.copy()
+        if display.ndim == 2:
+            display = cv2.cvtColor(display, cv2.COLOR_GRAY2RGB)
+        else:
+            display = cv2.cvtColor(display, cv2.COLOR_BGR2RGB)
+    except Exception:
+        display = image
+    entry = {"label": label, "image": display}
+    if note:
+        entry["note"] = note
+    store.setdefault(roi_name, []).append(entry)
 
 def load_image(uploaded_file) -> np.ndarray:
     """Load bytes/PIL image into OpenCV BGR array."""
@@ -554,6 +577,8 @@ def extract_digits(
     min_length: Optional[int] = None,
     max_length: Optional[int] = None,
     return_confidence: bool = False,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+    roi_name: Optional[str] = None,
 ) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("", 0.0) if return_confidence else ""
@@ -575,6 +600,12 @@ def extract_digits(
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
     guide_clahe = clahe.apply(guide_gray)
+
+    _record_debug_image(debug_store, roi_name, "digits: gray", gray)
+    _record_debug_image(debug_store, roi_name, "digits: gray clahe", gray_clahe)
+    _record_debug_image(debug_store, roi_name, "digits: guide suppressed", guide_suppressed)
+    _record_debug_image(debug_store, roi_name, "digits: guide gray", guide_gray)
+    _record_debug_image(debug_store, roi_name, "digits: guide clahe", guide_clahe)
 
     blue_enhanced = emphasize_blue_ink(color)
     blue_blur = cv2.GaussianBlur(blue_enhanced, (3, 3), 0)
@@ -610,30 +641,37 @@ def extract_digits(
 
     digits_allowlist = "0123456789"
     candidates = [
-        {"image": gray, "scale": 2.2},
-        {"image": gray_clahe, "scale": 2.4},
-        {"image": color, "scale": 2.0},
-        {"image": blue_enhanced, "scale": 2.8},
-        {"image": blue_binary, "scale": 3.0},
-        {"image": cv2.bitwise_not(blue_binary), "scale": 3.0},
-        {"image": binary_clean, "scale": 3.0},
-        {"image": cv2.bitwise_not(binary_clean), "scale": 3.0},
-        {"image": guide_gray, "scale": 2.4},
-        {"image": guide_clahe, "scale": 2.6},
-        {"image": guide_suppressed, "scale": 2.2},
-        {"image": guide_blue, "scale": 3.0},
-        {"image": guide_binary, "scale": 3.0},
-        {"image": cv2.bitwise_not(guide_binary), "scale": 3.0},
-        {"image": guide_binary_clean, "scale": 3.2},
-        {"image": cv2.bitwise_not(guide_binary_clean), "scale": 3.2},
+        {"label": "gray", "image": gray, "scale": 2.2},
+        {"label": "gray clahe", "image": gray_clahe, "scale": 2.4},
+        {"label": "color", "image": color, "scale": 2.0},
+        {"label": "blue enhanced", "image": blue_enhanced, "scale": 2.8},
+        {"label": "blue binary", "image": blue_binary, "scale": 3.0},
+        {"label": "blue binary inverted", "image": cv2.bitwise_not(blue_binary), "scale": 3.0},
+        {"label": "blue binary clean", "image": binary_clean, "scale": 3.0},
+        {"label": "blue binary clean inverted", "image": cv2.bitwise_not(binary_clean), "scale": 3.0},
+        {"label": "guide gray", "image": guide_gray, "scale": 2.4},
+        {"label": "guide clahe", "image": guide_clahe, "scale": 2.6},
+        {"label": "guide suppressed color", "image": guide_suppressed, "scale": 2.2},
+        {"label": "guide blue", "image": guide_blue, "scale": 3.0},
+        {"label": "guide binary", "image": guide_binary, "scale": 3.0},
+        {"label": "guide binary inverted", "image": cv2.bitwise_not(guide_binary), "scale": 3.0},
+        {"label": "guide binary clean", "image": guide_binary_clean, "scale": 3.2},
+        {"label": "guide binary clean inverted", "image": cv2.bitwise_not(guide_binary_clean), "scale": 3.2},
     ]
 
     results: List[Tuple[str, float]] = []
 
-    for candidate in candidates:
+    for idx, candidate in enumerate(candidates):
         candidate_image = candidate["image"]
         factor = candidate.get("scale", 2.0)
         scaled = upscale(candidate_image, factor=factor)
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"digits primary {idx + 1}: {candidate.get('label', 'candidate')}",
+            scaled,
+            note=f"scale={factor}, min_conf=0.55",
+        )
         digits, confidence = read_digits_with_confidence(
             scaled,
             allowlist=digits_allowlist,
@@ -650,10 +688,17 @@ def extract_digits(
 
     secondary_results: List[Tuple[str, float]] = []
 
-    for candidate in candidates:
+    for idx, candidate in enumerate(candidates):
         candidate_image = candidate["image"]
         factor = candidate.get("scale", 2.0)
         scaled = upscale(candidate_image, factor=factor)
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"digits secondary {idx + 1}: {candidate.get('label', 'candidate')}",
+            scaled,
+            note=f"scale={factor}, min_conf=0.40",
+        )
         digits, confidence = read_digits_with_confidence(
             scaled,
             allowlist=digits_allowlist,
@@ -671,13 +716,18 @@ def extract_digits(
     results.extend(secondary_results)
 
     if ink_ratio >= 0.0015:
-        fallback_text = run_easyocr(
-            upscale(cv2.bitwise_not(binary_clean), factor=3.0),
-            allowlist=digits_allowlist,
-        )
+        fallback_image = upscale(cv2.bitwise_not(binary_clean), factor=3.0)
+        fallback_text = run_easyocr(fallback_image, allowlist=digits_allowlist)
         fallback_digits = re.sub(r"[^0-9]", "", fallback_text)
         if fallback_digits:
             results.append((fallback_digits, 0.38))
+            _record_debug_image(
+                debug_store,
+                roi_name,
+                "digits fallback easyocr on inverted clean",
+                fallback_image,
+                note="easyocr fallback",
+            )
 
     if not results:
         return ("", 0.0) if return_confidence else ""
@@ -767,7 +817,11 @@ def _cnp_try_single_digit_fix(digits: str, confidences: List[float]) -> str:
     return ""
 
 
-def extract_cnp(image: np.ndarray) -> str:
+def extract_cnp(
+    image: np.ndarray,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+    roi_name: Optional[str] = None,
+) -> str:
     """Specialised extractor for Romanian CNP (13 digits with checksum).
 
     Tries multiple preprocessing variants, prefers a 13-digit substring that
@@ -776,18 +830,19 @@ def extract_cnp(image: np.ndarray) -> str:
     if image.size == 0:
         return ""
 
+    _record_debug_image(debug_store, roi_name, "cnp: input", image)
     # 1) Try a simple 13-cell segmentation pass. Many forms print 13 small
     # boxes; slicing evenly is often sufficient and robust to stamps.
     try:
         if image.ndim == 3:
-            color = image
             gray_base = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         else:
             gray_base = image.copy()
-            color = cv2.cvtColor(gray_base, cv2.COLOR_GRAY2BGR)
 
+        _record_debug_image(debug_store, roi_name, "cnp: gray base", gray_base)
         # Trim to content to align 13 equal segments better
         gray_base = _trim_to_content(gray_base)
+        _record_debug_image(debug_store, roi_name, "cnp: trimmed base", gray_base)
         height, width = gray_base.shape[:2]
         if width >= 130 and height >= 16:
             per = max(1, width // 13)
@@ -802,6 +857,13 @@ def extract_cnp(image: np.ndarray) -> str:
                 if inner.size == 0:
                     inner = w_slice
                 scaled = upscale(inner, factor=2.8)
+                _record_debug_image(
+                    debug_store,
+                    roi_name,
+                    f"cnp: cell {idx + 1} scaled",
+                    scaled,
+                    note="segmented cell",
+                )
                 digit, conf = read_digits_with_confidence(scaled, allowlist="0123456789", min_confidence=0.28)
                 digit = re.sub(r"[^0-9]", "", digit)[:1]
                 assembled.append(digit if digit else "")
@@ -828,6 +890,8 @@ def extract_cnp(image: np.ndarray) -> str:
         min_length=11,
         max_length=13,
         return_confidence=True,
+        debug_store=debug_store,
+        roi_name=roi_name,
     )
     if len(digits) == 13 and _cnp_checksum_ok(digits):
         return digits
@@ -852,27 +916,40 @@ def extract_cnp(image: np.ndarray) -> str:
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     gray_clahe = clahe.apply(gray)
     guide_clahe = clahe.apply(guide_gray)
+    _record_debug_image(debug_store, roi_name, "cnp: guide suppressed", guide_suppressed)
+    _record_debug_image(debug_store, roi_name, "cnp: guide gray", guide_gray)
+    _record_debug_image(debug_store, roi_name, "cnp: guide clahe", guide_clahe)
 
     # Binary versions that frequently work well for boxed sequences
     blur = cv2.GaussianBlur(gray_clahe, (3, 3), 0)
     adaptive = cv2.adaptiveThreshold(blur, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 31, 9)
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     joined = cv2.morphologyEx(adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
+    _record_debug_image(debug_store, roi_name, "cnp: adaptive", adaptive)
+    _record_debug_image(debug_store, roi_name, "cnp: joined", joined)
 
     candidates = [
-        {"image": gray, "scale": 2.4},
-        {"image": gray_clahe, "scale": 2.6},
-        {"image": guide_gray, "scale": 2.6},
-        {"image": guide_clahe, "scale": 2.8},
-        {"image": adaptive, "scale": 3.0},
-        {"image": cv2.bitwise_not(adaptive), "scale": 3.0},
-        {"image": joined, "scale": 3.0},
-        {"image": cv2.bitwise_not(joined), "scale": 3.0},
+        {"label": "gray", "image": gray, "scale": 2.4},
+        {"label": "gray clahe", "image": gray_clahe, "scale": 2.6},
+        {"label": "guide gray", "image": guide_gray, "scale": 2.6},
+        {"label": "guide clahe", "image": guide_clahe, "scale": 2.8},
+        {"label": "adaptive", "image": adaptive, "scale": 3.0},
+        {"label": "adaptive inverted", "image": cv2.bitwise_not(adaptive), "scale": 3.0},
+        {"label": "joined", "image": joined, "scale": 3.0},
+        {"label": "joined inverted", "image": cv2.bitwise_not(joined), "scale": 3.0},
     ]
 
     best = ""
-    for cand in candidates:
-        scaled = upscale(cand["image"], factor=cand.get("scale", 2.5))
+    for idx, cand in enumerate(candidates):
+        factor = cand.get("scale", 2.5)
+        scaled = upscale(cand["image"], factor=factor)
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"cnp candidate {idx + 1}: {cand.get('label', 'candidate')}",
+            scaled,
+            note=f"scale={factor}",
+        )
         text, conf = read_digits_with_confidence(scaled, allowlist="0123456789", min_confidence=0.35)
         digits = re.sub(r"[^0-9]", "", text)
         if len(digits) >= 13:
@@ -892,6 +969,8 @@ def extract_cnp(image: np.ndarray) -> str:
         expected_length=13,
         min_length=11,
         max_length=13,
+        debug_store=debug_store,
+        roi_name=roi_name,
     )
     chosen = _best_13_digit_substring(fallback)
     if _cnp_checksum_ok(chosen):
@@ -904,6 +983,8 @@ def extract_text(
     image: np.ndarray,
     allowlist: Optional[str] = None,
     return_confidence: bool = False,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+    roi_name: Optional[str] = None,
 ) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("", 0.0) if return_confidence else ""
@@ -955,6 +1036,22 @@ def extract_text(
     guide_closed = cv2.morphologyEx(guide_adaptive, cv2.MORPH_CLOSE, kernel, iterations=1)
     guide_clean = remove_grid_lines(guide_adaptive)
 
+    _record_debug_image(debug_store, roi_name, "text: gray", gray)
+    _record_debug_image(debug_store, roi_name, "text: gray clahe", gray_clahe)
+    _record_debug_image(debug_store, roi_name, "text: dark enhanced", dark_enhanced)
+    _record_debug_image(debug_store, roi_name, "text: blue enhanced", blue_enhanced)
+    _record_debug_image(debug_store, roi_name, "text: guide suppressed", guide_suppressed)
+    _record_debug_image(debug_store, roi_name, "text: guide gray", guide_gray)
+    _record_debug_image(debug_store, roi_name, "text: guide clahe", guide_clahe)
+    _record_debug_image(debug_store, roi_name, "text: guide dark", guide_dark)
+    _record_debug_image(debug_store, roi_name, "text: guide blue", guide_blue)
+    _record_debug_image(debug_store, roi_name, "text: adaptive", adaptive)
+    _record_debug_image(debug_store, roi_name, "text: closed", closed)
+    _record_debug_image(debug_store, roi_name, "text: cleaned grid", cleaned_grid)
+    _record_debug_image(debug_store, roi_name, "text: guide adaptive", guide_adaptive)
+    _record_debug_image(debug_store, roi_name, "text: guide closed", guide_closed)
+    _record_debug_image(debug_store, roi_name, "text: guide clean", guide_clean)
+
     base_allowlist = (
         "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         "abcdefghijklmnopqrstuvwxyz-_/.,"
@@ -962,44 +1059,51 @@ def extract_text(
     primary_allowlist = allowlist if allowlist is not None else base_allowlist
 
     candidates = [
-        {"image": gray, "scale": 2.0, "min_conf": 0.38, "allowlist": None},
-        {"image": gray_clahe, "scale": 2.2, "min_conf": 0.4, "allowlist": None},
-        {"image": dark_enhanced, "scale": 2.3, "min_conf": 0.4, "allowlist": None},
-        {"image": cv2.bitwise_not(adaptive), "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": adaptive, "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": cv2.bitwise_not(closed), "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": closed, "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": cv2.bitwise_not(cleaned_grid), "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
-        {"image": cleaned_grid, "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
-        {"image": guide_gray, "scale": 2.2, "min_conf": 0.38, "allowlist": None},
-        {"image": guide_clahe, "scale": 2.4, "min_conf": 0.4, "allowlist": None},
-        {"image": guide_dark, "scale": 2.5, "min_conf": 0.4, "allowlist": None},
-        {"image": guide_blue, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": guide_adaptive, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": cv2.bitwise_not(guide_adaptive), "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
-        {"image": guide_closed, "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
-        {"image": cv2.bitwise_not(guide_closed), "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
-        {"image": guide_clean, "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
-        {"image": cv2.bitwise_not(guide_clean), "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
+        {"label": "gray", "image": gray, "scale": 2.0, "min_conf": 0.38, "allowlist": None},
+        {"label": "gray clahe", "image": gray_clahe, "scale": 2.2, "min_conf": 0.4, "allowlist": None},
+        {"label": "dark enhanced", "image": dark_enhanced, "scale": 2.3, "min_conf": 0.4, "allowlist": None},
+        {"label": "adaptive inverted", "image": cv2.bitwise_not(adaptive), "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "adaptive", "image": adaptive, "scale": 2.6, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "closed inverted", "image": cv2.bitwise_not(closed), "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "closed", "image": closed, "scale": 2.8, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "cleaned grid inverted", "image": cv2.bitwise_not(cleaned_grid), "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
+        {"label": "cleaned grid", "image": cleaned_grid, "scale": 2.8, "min_conf": 0.42, "allowlist": primary_allowlist},
+        {"label": "guide gray", "image": guide_gray, "scale": 2.2, "min_conf": 0.38, "allowlist": None},
+        {"label": "guide clahe", "image": guide_clahe, "scale": 2.4, "min_conf": 0.4, "allowlist": None},
+        {"label": "guide dark", "image": guide_dark, "scale": 2.5, "min_conf": 0.4, "allowlist": None},
+        {"label": "guide blue", "image": guide_blue, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "guide adaptive", "image": guide_adaptive, "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "guide adaptive inverted", "image": cv2.bitwise_not(guide_adaptive), "scale": 2.7, "min_conf": 0.45, "allowlist": primary_allowlist},
+        {"label": "guide closed", "image": guide_closed, "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
+        {"label": "guide closed inverted", "image": cv2.bitwise_not(guide_closed), "scale": 2.9, "min_conf": 0.46, "allowlist": primary_allowlist},
+        {"label": "guide clean", "image": guide_clean, "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
+        {"label": "guide clean inverted", "image": cv2.bitwise_not(guide_clean), "scale": 2.9, "min_conf": 0.44, "allowlist": primary_allowlist},
     ]
 
     if np.count_nonzero(blue_enhanced) > 0:
         candidates.append(
-            {"image": blue_enhanced, "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
+            {"label": "blue enhanced", "image": blue_enhanced, "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
         )
         candidates.append(
-            {"image": cv2.bitwise_not(blue_enhanced), "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
+            {"label": "blue enhanced inverted", "image": cv2.bitwise_not(blue_enhanced), "scale": 2.7, "min_conf": 0.46, "allowlist": primary_allowlist}
         )
 
     best_text = ""
     best_confidence = 0.0
 
-    for candidate in candidates:
+    for idx, candidate in enumerate(candidates):
         candidate_image = candidate["image"]
         factor = candidate.get("scale", 2.0)
         min_conf = candidate.get("min_conf", 0.35)
         candidate_allowlist = candidate.get("allowlist")
         scaled = upscale(candidate_image, factor=factor)
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"text candidate {idx + 1}: {candidate.get('label', 'candidate')}",
+            scaled,
+            note=f"scale={factor}, min_conf={min_conf}",
+        )
         text, confidence = read_text_with_confidence(
             scaled,
             allowlist=candidate_allowlist,
@@ -1018,11 +1122,14 @@ def extract_text(
     if best_text:
         return (best_text, best_confidence) if return_confidence else best_text
 
-    fallback = tidy_text(
-        run_easyocr(
-            upscale(gray, factor=2.4),
-            allowlist=allowlist,
-        )
+    fallback_image = upscale(gray, factor=2.4)
+    fallback = tidy_text(run_easyocr(fallback_image, allowlist=allowlist))
+    _record_debug_image(
+        debug_store,
+        roi_name,
+        "text fallback easyocr",
+        fallback_image,
+        note="easyocr fallback",
     )
     if return_confidence:
         fallback_conf = 0.25 if fallback else 0.0
@@ -1051,6 +1158,8 @@ def extract_date(
     image: np.ndarray,
     expected_length: int = 6,
     return_confidence: bool = False,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+    roi_name: Optional[str] = None,
 ) -> Union[str, Tuple[str, float]]:
     digits, digits_conf = extract_digits(
         image,
@@ -1058,6 +1167,8 @@ def extract_date(
         min_length=expected_length,
         max_length=expected_length,
         return_confidence=True,
+        debug_store=debug_store,
+        roi_name=roi_name,
     )
     formatted = format_date_from_digits(digits)
     final_conf = digits_conf
@@ -1081,7 +1192,12 @@ def parse_date(raw: str) -> str:
     return digits[:6].strip()
 
 
-def detect_checkbox(image: np.ndarray, return_confidence: bool = False) -> Union[str, Tuple[str, float]]:
+def detect_checkbox(
+    image: np.ndarray,
+    return_confidence: bool = False,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+    roi_name: Optional[str] = None,
+) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("false", 0.0) if return_confidence else "false"
     if image.ndim == 3:
@@ -1091,25 +1207,33 @@ def detect_checkbox(image: np.ndarray, return_confidence: bool = False) -> Union
         gray = image
         color = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
+    _record_debug_image(debug_store, roi_name, "checkbox: input", color)
+
     inner = shrink_crop(color, margin_ratio=0.12)
     if inner.size == 0:
         inner = color
     inner = auto_trim_borders(inner, max_fraction=0.2, intensity_threshold=210.0, variance_threshold=22.0)
+    _record_debug_image(debug_store, roi_name, "checkbox: trimmed", inner)
 
     cleaned = suppress_guidelines(inner)
     if cleaned.ndim == 3:
         cleaned_gray = cv2.cvtColor(cleaned, cv2.COLOR_BGR2GRAY)
     else:
         cleaned_gray = cleaned
+    _record_debug_image(debug_store, roi_name, "checkbox: cleaned", cleaned)
+    _record_debug_image(debug_store, roi_name, "checkbox: cleaned gray", cleaned_gray)
 
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
     enhanced = clahe.apply(cleaned_gray)
     blurred = cv2.GaussianBlur(enhanced, (3, 3), 0)
     _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    _record_debug_image(debug_store, roi_name, "checkbox: enhanced", enhanced)
+    _record_debug_image(debug_store, roi_name, "checkbox: binary", binary)
 
     kernel = np.ones((3, 3), np.uint8)
     strokes = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel, iterations=1)
     strokes = cv2.morphologyEx(strokes, cv2.MORPH_CLOSE, np.ones((2, 2), np.uint8), iterations=1)
+    _record_debug_image(debug_store, roi_name, "checkbox: strokes", strokes)
 
     height, width = strokes.shape[:2]
     total_area = float(height * width)
@@ -1188,10 +1312,16 @@ def detect_checkbox(image: np.ndarray, return_confidence: bool = False) -> Union
     return ("false", confidence) if return_confidence else "false"
 
 
-def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray) -> str:
+def extract_roi_value(
+    roi: RoiSpec,
+    color_img: np.ndarray,
+    gray_img: np.ndarray,
+    debug_store: Optional[Dict[str, List[dict]]] = None,
+) -> str:
     height, width = gray_img.shape[:2]
     y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
     crop_color = color_img[y1:y2, x1:x2]
+    _record_debug_image(debug_store, roi.name, "roi: raw crop", crop_color)
     margin_defaults = {
         "digits": 0.06,
         "date": 0.06,
@@ -1209,14 +1339,22 @@ def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray)
         margin = 0.02
     if margin and margin > 0:
         crop_color = shrink_crop(crop_color, margin_ratio=margin)
+        _record_debug_image(debug_store, roi.name, "roi: margin trimmed", crop_color, note=f"margin={margin}")
 
     auto_trim_fraction = roi.auto_trim if roi.auto_trim is not None else auto_trim_defaults.get(roi.kind)
     if auto_trim_fraction and auto_trim_fraction > 0:
         crop_color = auto_trim_borders(crop_color, max_fraction=auto_trim_fraction)
+        _record_debug_image(
+            debug_store,
+            roi.name,
+            "roi: auto-trimmed",
+            crop_color,
+            note=f"auto_trim={auto_trim_fraction}",
+        )
 
     if roi.kind == "digits":
         if roi.name in {"cnp", "cnp_copil"}:
-            value = extract_cnp(crop_color)
+            value = extract_cnp(crop_color, debug_store=debug_store, roi_name=roi.name)
         else:
             expected = roi.expected_length
             min_len = roi.min_length if roi.min_length is not None else expected
@@ -1226,26 +1364,35 @@ def extract_roi_value(roi: RoiSpec, color_img: np.ndarray, gray_img: np.ndarray)
                 expected_length=expected,
                 min_length=min_len,
                 max_length=max_len,
+                debug_store=debug_store,
+                roi_name=roi.name,
             )
     elif roi.kind == "date":
         expected = roi.expected_length if roi.expected_length is not None else 6
-        value = extract_date(crop_color, expected_length=expected)
+        value = extract_date(
+            crop_color,
+            expected_length=expected,
+            debug_store=debug_store,
+            roi_name=roi.name,
+        )
     elif roi.kind == "checkbox":
-        value = detect_checkbox(crop_color)
+        value = detect_checkbox(crop_color, debug_store=debug_store, roi_name=roi.name)
     else:
-        value = extract_text(crop_color, allowlist=roi.allowlist)
+        value = extract_text(crop_color, allowlist=roi.allowlist, debug_store=debug_store, roi_name=roi.name)
     return value.strip()
 
 def extract_fields(
     uploaded_file,
     preview: bool = False,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    debug: bool = False,
 ):
     """Return structured values and optional ROI preview overlay."""
     total_roi = len(ROI_SPECS)
     base_steps = 3.0
     total_steps = float(max(total_roi + base_steps, 1.0))
     completed = 0.0
+    debug_store: Optional[Dict[str, List[dict]]] = {} if debug else None
 
     def advance(message: str, weight: float = 1.0) -> None:
         nonlocal completed
@@ -1272,7 +1419,7 @@ def extract_fields(
 
     extracted = {}
     for roi in ROI_SPECS:
-        extracted[roi.name] = extract_roi_value(roi, aligned, gray)
+        extracted[roi.name] = extract_roi_value(roi, aligned, gray, debug_store=debug_store)
         advance(f"Processed ROI: {roi.name}", weight=1.0)
 
     if progress_callback:
@@ -1293,6 +1440,6 @@ def extract_fields(
                 1,
                 cv2.LINE_AA,
             )
-        return preview_img, extracted
+        return preview_img, extracted, (debug_store or {})
 
-    return extracted
+    return extracted, (debug_store or {})

@@ -28,6 +28,9 @@ LANGUAGE_OPTIONS = {
         "history_clear": "Clear history",
         "history_cleared": "History cleared.",
         "history_preview_unavailable": "Preview unavailable.",
+        "debug_label": "Show ROI debug layers",
+        "debug_section": "ROI debug layers",
+        "debug_empty": "No debug layers captured.",
     },
     "Romana": {
         "title": "CNAS Medical-Certificates DDE",
@@ -46,6 +49,9 @@ LANGUAGE_OPTIONS = {
         "history_clear": "Sterge istoricul",
         "history_cleared": "Istoricul a fost sters.",
         "history_preview_unavailable": "Previzualizarea nu este disponibila.",
+        "debug_label": "Afiseaza etapele ROI (debug)",
+        "debug_section": "Etape ROI debug",
+        "debug_empty": "Nu exista etape capturate pentru debug.",
     },
 }
 
@@ -65,6 +71,7 @@ st.title(texts["title"])
 st.write(texts["description"])
 
 uploaded_file = st.file_uploader(texts["uploader_label"], type=["png", "jpg", "jpeg"])
+debug_mode = st.sidebar.checkbox(texts["debug_label"], value=False)
 
 if uploaded_file:
     file_bytes = uploaded_file.getvalue()
@@ -80,11 +87,15 @@ if uploaded_file:
         progress_bar.progress(progress_value)
         progress_status.text(message)
 
-    preview_image, extracted = extract_fields(
+    preview_image, extracted, debug_layers = extract_fields(
         io.BytesIO(file_bytes),
         preview=True,
         progress_callback=report_progress,
+        debug=debug_mode,
     )
+
+    # Sort extracted fields by keys
+    extracted = dict(sorted(extracted.items()))
 
     progress_bar_container.empty()
     progress_status.empty()
@@ -100,11 +111,23 @@ if uploaded_file:
     preview_col, results_col = st.columns((3, 2))
     with preview_col:
         st.image(preview_rgb, caption=texts["preview_caption"], width="stretch")
+        if debug_mode:
+            st.divider()
+            st.subheader(texts["debug_section"])
+            if debug_layers:
+                for roi_name, layers in debug_layers.items():
+                    with st.expander(roi_name, expanded=False):
+                        for layer in layers:
+                            caption = layer.get("label", "")
+                            if layer.get("note"):
+                                caption = f"{caption} ({layer['note']})" if caption else layer["note"]
+                            st.image(layer.get("image"), caption=caption, width='stretch')
+            else:
+                st.info(texts["debug_empty"])
     with results_col:
         st.success(texts["success"])
         st.subheader(texts["results_header"])
         st.json(extracted)
-        st.dataframe(results_df, width="stretch")
         st.download_button(
             label=texts["download_label"],
             data=excel_bytes,
@@ -112,6 +135,15 @@ if uploaded_file:
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key="download_current_excel",
         )
+        st.download_button(
+            label="Download results as JSON",
+            data=pd.Series(extracted).to_json(orient="index", indent=2),
+            file_name="ocr_results.json",
+            mime="application/json",
+            key="download_current_json",
+        )
+
+    st.dataframe(results_df, width="stretch")
 
     history = st.session_state["history"]
     existing_entry = history[0] if history and history[0].get("file_hash") == file_hash else None

@@ -30,54 +30,46 @@
     "description": "Cod indemnizatie (1-17)",
     "expected_length": 2,
     "min_length": 1,
-    "max_length": 2,
-    "margin": 0.0,
-    "auto_trim": 0.02
+    "max_length": 2
   },
   "cnp": {
     "roi": [
-      0.2135,
-      0.247,
-      0.2525,
-      0.623
+      0.2235,
+      0.276,
+      0.2435,
+      0.597
     ],
     "kind": "digits",
     "description": "CNP titular",
     "expected_length": 13,
     "min_length": 13,
-    "max_length": 13,
-    "margin": 0.0,
-    "auto_trim": 0.02
+    "max_length": 13
   },
   "cui": {
     "roi": [
-      0.488,
-      0.038,
-      0.525,
-      0.388
+      0.490,
+      0.05,
+      0.513,
+      0.36
     ],
     "kind": "digits",
     "description": "CUI unitate",
     "expected_length": 8,
     "min_length": 6,
-    "max_length": 10,
-    "margin": 0.02,
-    "auto_trim": 0.06
+    "max_length": 10
   },
   "cnp_copil": {
     "roi": [
-      0.236,
-      0.398,
-      0.275,
-      0.754
+      0.245,
+      0.418,
+      0.265,
+      0.735
     ],
     "kind": "digits",
     "description": "CNP copil/pacient",
     "expected_length": 13,
     "min_length": 13,
-    "max_length": 13,
-    "margin": 0.0,
-    "auto_trim": 0.02
+    "max_length": 13
   },
   "initial_checkbox": {
     "roi": [
@@ -91,10 +83,10 @@
   },
   "in_continuare_checkbox": {
     "roi": [
-      0.042731,
-      0.775331,
-      0.064029,
-      0.814542
+      0.043731,
+      0.778331,
+      0.063029,
+      0.808542
     ],
     "kind": "checkbox",
     "description": "Bifa certificat in continuare"
@@ -120,16 +112,14 @@
     "description": "Data acordarii",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.035,
-    "auto_trim": 0.08
+    "max_length": 6
   },
   "nr_zile": {
     "roi": [
       0.361927,
-      0.431745,
-      0.389711,
-      0.477367
+      0.426745,
+      0.385711,
+      0.476367
     ],
     "kind": "digits",
     "description": "Numar zile"
@@ -145,9 +135,7 @@
     "description": "De la (data inceput)",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.035,
-    "auto_trim": 0.08
+    "max_length": 6
   },
   "pana_la": {
     "roi": [
@@ -160,9 +148,7 @@
     "description": "Pana la (data sfarsit)",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.035,
-    "auto_trim": 0.08
+    "max_length": 6
   },
   "cod_diagnostic": {
     "roi": [
@@ -175,9 +161,7 @@
     "description": "Cod diagnostic",
     "expected_length": 3,
     "min_length": 3,
-    "max_length": 3,
-    "margin": 0.05,
-    "auto_trim": 0.1
+    "max_length": 3
   },
   "adult_checkbox": {
     "roi": [
@@ -196,13 +180,11 @@
       0.516,
       0.583136
     ],
-    "kind": "digits",
+    "kind": "text",
     "description": "Cod parafa medic",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.03,
-    "auto_trim": 0.02
+    "max_length": 6
     
   },
   "cod_parafa_medic_sef": {
@@ -212,13 +194,11 @@
       0.516414,
       0.898874
     ],
-    "kind": "digits",
+    "kind": "text",
     "description": "Cod parafa medic sef",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.03,
-    "auto_trim": 0.08
+    "max_length": 6
   },
   "cod_urgenta": {
     "roi": [
@@ -231,13 +211,11 @@
     "description": "Cod urgenta medico-chirurgicala",
     "expected_length": 3,
     "min_length": 1,
-    "max_length": 3,
-    "margin": 0.0,
-    "auto_trim": 0.02
+    "max_length": 3
   },
   "data_primirii": {
     "roi": [
-      0.947266,
+      0.927266,
       0.777218,
       0.971971,
       0.911828
@@ -246,9 +224,7 @@
     "description": "Data primirii",
     "expected_length": 6,
     "min_length": 6,
-    "max_length": 6,
-    "margin": 0.04,
-    "auto_trim": 0.08
+    "max_length": 6
   },
   "nr_serie_document": {
     "roi": [
@@ -265,7 +241,7 @@
       0.129748,
       0.662043,
       0.155286,
-      0.759884
+      0.754884
     ],
     "kind": "text",
     "description": "Nr. Serie CCMAT"
@@ -282,9 +258,9 @@
   },
   "cas_emitenta": {
     "roi": [
-      0.521428,
+      0.510428,
       0.180692,
-      0.549384,
+      0.539384,
       0.362323
     ],
     "kind": "text",
