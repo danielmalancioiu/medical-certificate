@@ -54,7 +54,7 @@
     ],
     "kind": "digits",
     "description": "CUI unitate",
-    "expected_length": 8,
+    "expected_length": 7,
     "min_length": 6,
     "max_length": 10
   },
@@ -180,7 +180,7 @@
       0.516,
       0.583136
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "Cod parafa medic",
     "expected_length": 6,
     "min_length": 6,
@@ -194,7 +194,7 @@
       0.516414,
       0.898874
     ],
-    "kind": "text",
+    "kind": "digits",
     "description": "Cod parafa medic sef",
     "expected_length": 6,
     "min_length": 6,
@@ -234,6 +234,7 @@
       0.9358
     ],
     "kind": "digits",
+    "preferred_ink": "black",
     "description": "Nr. Serie CCMAT"
   },
   "serie_document": {
@@ -244,6 +245,7 @@
       0.754884
     ],
     "kind": "text",
+    "preferred_ink": "black",
     "description": "Nr. Serie CCMAT"
   },
   "evidenta_cas": {
