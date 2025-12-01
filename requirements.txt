@@ -1,6 +1,10 @@
-streamlit
-easyocr
+streamlit~=1.50.0
+easyocr~=1.7.2
+paddlepaddle==3.2.0
+paddleocr~=3.3.2
 opencv-python-headless
-pillow
-numpy
+pillow~=11.3.0
+numpy~=2.2.6
 openpyxl
+pandas~=2.3.3
+deskew~=1.5.3

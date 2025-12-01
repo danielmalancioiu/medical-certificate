@@ -5,26 +5,18 @@ A lightweight Streamlit app that automatically extracts structured data (series,
 ---
 
 ## 🚀 Features
-- Extracts:
-  - Seria și număr certificat
-  - Nume pacient
-  - CNP
-  - Data „De la” și „Până la”
-  - Cod diagnostic
-- Auto-aligns extraction zones based on text position
-- Works with scanned or photographed documents
-- Visual ROI preview for debugging
+
+WIP
 
 ---
 
 ## ⚙️ 1. Prerequisites
 Make sure you have **Python 3.10+** installed.
 
-### Optional (recommended for Windows):
-Install Tesseract OCR (if you ever extend beyond EasyOCR):
-> https://github.com/UB-Mannheim/tesseract/wiki
-
----
+Install PaddlePaddle runtime (required for PaddleOCR models):
+```bash
+pip install paddlepaddle==2.6.1
+```
 
 ## 🧱 2. Clone & Setup
 
@@ -99,6 +91,8 @@ python -m venv .venv
 | `opencv-python-headless` | Image preprocessing |
 | `pillow` | Image handling |
 | `numpy` | Array operations |
+| `paddlepaddle` | Backend for PaddleOCR models |
+| `paddleocr` | OCR models |
 
 ---
 

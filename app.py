@@ -87,12 +87,22 @@ if uploaded_file:
         progress_bar.progress(progress_value)
         progress_status.text(message)
 
-    preview_image, extracted, debug_layers = extract_fields(
-        io.BytesIO(file_bytes),
-        preview=True,
-        progress_callback=report_progress,
-        debug=debug_mode,
-    )
+    try:
+        preview_image, extracted, debug_layers = extract_fields(
+            io.BytesIO(file_bytes),
+            preview=True,
+            progress_callback=report_progress,
+            debug=debug_mode,
+        )
+    except Exception as exc:
+        progress_bar_container.empty()
+        progress_status.empty()
+        st.error(
+            "OCR failed to run. "
+            "If you are offline, download PaddleOCR models in advance or allow temporary network access. "
+            f"Details: {exc}"
+        )
+        st.stop()
 
     # Sort extracted fields by keys
     extracted = dict(sorted(extracted.items()))
