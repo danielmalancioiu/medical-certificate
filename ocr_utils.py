@@ -14,11 +14,14 @@ import easyocr
 import numpy as np
 from PIL import Image
 from deskew import determine_skew
+from paddleocr import TextRecognition
 
 reader = easyocr.Reader(["en"], gpu=True)
-
 TARGET_WIDTH = 1400
 TARGET_HEIGHT = 1980
+
+def load_model():
+    return TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
 
 @dataclass(frozen=True)
 class RoiSpec:
@@ -37,10 +40,8 @@ class RoiSpec:
     allowlist: Optional[str] = None
     preferred_ink: Optional[str] = None
 
-
 # ROI map approximated on an aligned reference certificate.
 ROI_MAP_PATH = Path(__file__).with_name("roi_map.json")
-
 
 def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
     try:
@@ -89,19 +90,16 @@ def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
 
     return specs
 
-
 try:
     ROI_SPECS: List[RoiSpec] = _load_roi_specs()
 except Exception as exc:
     raise RuntimeError(f"Failed to load ROI specifications from '{ROI_MAP_PATH}': {exc}") from exc
-
 
 def choose_color_path(roi: RoiSpec) -> str:
     """Return the preferred color emphasis path for a ROI."""
     if roi.preferred_ink == "black":
         return "black"
     return "blue"
-
 
 def _record_debug_image(
     store: Optional[Dict[str, List[dict]]],
@@ -341,6 +339,7 @@ def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np
         return variants
 
     emphasis = emphasize_blue_ink(image)
+    variants.append(("emphasis", emphasis))
     variants.append(("emphasis_inv", cv2.bitwise_not(emphasis)))
     denoise = cv2.medianBlur(emphasis, 3)
     variants.append(("emphasis_denoised_inv", cv2.bitwise_not(denoise)))
@@ -554,7 +553,7 @@ def extract_roi_value(
     y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
     crop_color = color_img[y1:y2, x1:x2]
     color_path = choose_color_path(roi)
-
+    _record_debug_image(debug_store, roi.name, f"roi crop", crop_color)
     if roi.kind == "digits":
         expected = roi.expected_length
         min_len = roi.min_length if roi.min_length is not None else expected
