@@ -342,14 +342,14 @@
   },
   "data_primirii": {
     "roi": [
-      0.927266,
+      0.939266,
       0.777218,
-      0.971971,
+      0.964971,
       0.911828
     ],
     "kind": "date",
     "description": "Data primirii",
-    "expected_length": 6,
+    "expected_length": 10,
     "min_length": 6,
     "max_length": 10
   },

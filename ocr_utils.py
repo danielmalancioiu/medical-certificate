@@ -254,6 +254,30 @@ def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
     enhanced = cv2.morphologyEx(enhanced, cv2.MORPH_CLOSE, kernel, iterations=1)
     return enhanced
 
+def emphasize_blue_ink_thin(image: np.ndarray) -> np.ndarray:
+    if image.size == 0:
+        return image
+    if image.ndim == 2:
+        bgr = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    else:
+        bgr = image
+
+    hsv = cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV)
+    lower_blue = np.array([85, 40, 50], dtype=np.uint8)
+    upper_blue = np.array([150, 255, 255], dtype=np.uint8)
+    mask = cv2.inRange(hsv, lower_blue, upper_blue)
+
+    b_channel, g_channel, r_channel = cv2.split(bgr)
+    max_gr = cv2.max(g_channel, r_channel)
+    dominance = cv2.subtract(b_channel, max_gr)
+
+    combined = cv2.max(mask, dominance)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(combined)
+
+    return enhanced
+
 def tidy_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip().replace(" ", "")
 
@@ -348,11 +372,17 @@ def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np
         return variants
 
     emphasis = emphasize_blue_ink(image)
+    emphasis_thin = emphasize_blue_ink_thin(image)
+    variants.append(("emphasis_thin", emphasis_thin))
+    variants.append(("emphasis_thin_inv", cv2.bitwise_not(emphasis_thin)))
     variants.append(("emphasis", emphasis))
     variants.append(("emphasis_inv", cv2.bitwise_not(emphasis)))
     denoise = cv2.medianBlur(emphasis, 3)
     variants.append(("emphasis_denoised", denoise))
     variants.append(("emphasis_denoised_inv", cv2.bitwise_not(denoise)))
+    denoise_thin = cv2.medianBlur(emphasis_thin, 3)
+    variants.append(("emphasis_thin_denoised", denoise_thin))
+    variants.append(("emphasis_thin_denoised_inv", cv2.bitwise_not(denoise_thin)))
     return variants
 
 @dataclass
