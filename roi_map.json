@@ -7,6 +7,9 @@
       0.27528
     ],
     "kind": "digits",
+    "expected_length": 2,
+    "min_length": 2,
+    "max_length": 2,
     "description": "Valabil pentru luna (litere)"
   },
   "valabil_pentru_anul": {
@@ -17,6 +20,9 @@
       0.524189
     ],
     "kind": "digits",
+    "expected_length": 2,
+    "min_length": 2,
+    "max_length": 2,
     "description": "Anul (numeric)"
   },
   "cod_indemnizatie": {
@@ -54,9 +60,9 @@
     ],
     "kind": "digits",
     "description": "CUI unitate",
-    "expected_length": 7,
+    "expected_length": 8,
     "min_length": 6,
-    "max_length": 10
+    "max_length": 8
   },
   "cnp_copil": {
     "roi": [

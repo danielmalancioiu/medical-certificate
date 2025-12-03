@@ -1,23 +1,17 @@
 from __future__ import annotations
 
-import datetime
 import io
 import json
-import math
 import re
-import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cv2
-import easyocr
 import numpy as np
 from PIL import Image
-from deskew import determine_skew
 from paddleocr import TextRecognition
 
-reader = easyocr.Reader(["en"], gpu=True)
 paddle_model = TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
 TARGET_WIDTH = 1400
 TARGET_HEIGHT = 1980
@@ -87,6 +81,14 @@ try:
     ROI_SPECS: List[RoiSpec] = _load_roi_specs()
 except Exception as exc:
     raise RuntimeError(f"Failed to load ROI specifications from '{ROI_MAP_PATH}': {exc}") from exc
+
+@dataclass(frozen=True)
+class ExtractedField:
+    name: str
+    value: str
+    confidence: float
+    needs_review: bool
+    review_reason: Optional[str] = None
 
 def choose_color_path(roi: RoiSpec) -> str:
     """Return the preferred color emphasis path for a ROI."""
@@ -254,6 +256,52 @@ def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
 def tidy_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
+DIGIT_LOOKALIKES = {
+    "O": "0",
+    "o": "0",
+    "D": "0",
+    "I": "1",
+    "l": "1",
+    "L": "1",
+    "|": "1",
+    "Z": "2",
+    "S": "5",
+    "s": "5",
+    "B": "8",
+    "G": "6",
+    "g": "9",
+    "q": "9",
+    "y": "7",
+    "f": "7",
+    "/": "7",
+    "h": "4",
+    "A": "4",
+}
+
+MIN_CONFIDENCE_BY_KIND = {
+    "checkbox": 0.9,
+    "digits": 0.65,
+    "date": 0.75,
+    "text": 0.65,
+}
+
+def normalize_digits_from_text(text: str) -> str:
+    """Collapse whitespace, map letter lookalikes to digits, strip non-digit characters."""
+    compact = re.sub(r"\s+", "", text or "")
+    mapped_chars: List[str] = []
+    for ch in compact:
+        mapped_chars.append(DIGIT_LOOKALIKES.get(ch, DIGIT_LOOKALIKES.get(ch.upper(), ch)))
+    mapped = "".join(mapped_chars)
+    return re.sub(r"\D", "", mapped)
+
+def format_date_digits(clean_digits: str) -> Optional[str]:
+    """Format ddmmyy or ddmmyyyy strings into dd.mm.yyyy."""
+    if len(clean_digits) == 8:
+        return f"{clean_digits[0:2]}.{clean_digits[2:4]}.{clean_digits[4:8]}"
+    if len(clean_digits) == 6:
+        return f"{clean_digits[0:2]}.{clean_digits[2:4]}.20{clean_digits[4:6]}"
+    return None
+
 def paddle_textrec_read(
     image: np.ndarray
 ) -> Tuple[str, float]:
@@ -278,27 +326,6 @@ def paddle_textrec_read(
 
     return "", 0.0
 
-def easyocr_raw_read(image: np.ndarray, allowlist: Optional[str] = None) -> Tuple[str, float]:
-    """Run EasyOCR without thresholding; return concatenated text and best confidence."""
-    if image.size == 0:
-        return "", 0.0
-    rgb = cv2.cvtColor(image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
-    results = reader.readtext(rgb, detail=1, paragraph=False, allowlist=allowlist)
-    texts: List[str] = []
-    best_conf = 0.0
-    for _bbox, text, conf in results:
-        if not text:
-            continue
-        texts.append(text)
-        best_conf = max(best_conf, float(conf))
-    return " ".join(texts).strip(), best_conf
-
-def detect_blue_checkbox(roi_bgr: np.ndarray) -> str:
-    blue = emphasize_blue_ink(roi_bgr)
-    binv = cv2.adaptiveThreshold(blue, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY_INV, 25, 7)
-    ratio = cv2.countNonZero(binv) / float(binv.size)
-    return "true" if ratio >= 0.006 else "false"
-
 def _base_gray_clahe(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
@@ -312,9 +339,7 @@ def threshold_img(img: np.ndarray, threshold_val: int) -> np.ndarray:
     return img_thresh
 
 def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np.ndarray]]:
-    variants: List[Tuple[str, np.ndarray]] = [
-        ("original", image),
-    ]
+    variants: List[Tuple[str, np.ndarray]] = []
     if color_path == "black":
         base_gray = _base_gray_clahe(image)
         variants.append(("gray", base_gray))
@@ -332,35 +357,46 @@ def extract_digits(
     image: np.ndarray,
     return_confidence: bool = False,
     debug_store: Optional[Dict[str, List[dict]]] = None,
-    roi_name: Optional[str] = None,
+    roi: Optional[RoiSpec] = None,
     color_path: str = "blue",
 ) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("", 0.0) if return_confidence else ""
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     variants = _generate_variants(color, color_path)
-    paddle_best_text = ""
-    paddle_best_conf = 0.0
+    best_text = ""
+    best_conf = 0.0
+    best_img: Optional[np.ndarray] = None
     for idx, (label, variant) in enumerate(variants):
-        raw_text, conf = paddle_textrec_read(variant)
-        if conf > paddle_best_conf:
-            paddle_best_text = raw_text
-            paddle_best_conf = conf
+        scaled = upscale(variant, factor=2.5)
+        raw_text, conf = paddle_textrec_read(scaled)
+        text = raw_text.strip()
+        if conf > best_conf and roi.max_length is not None and len(text) <= roi.max_length and roi.min_length is not None and len(text) >= roi.min_length:
+            best_text = text
+            best_conf = conf
+            best_img = scaled
 
         _record_debug_image(
             debug_store,
-            roi_name,
-            f"variant {idx + 1}: {label}",
-            variant,
+            roi.name if roi else None,
+            f"digits variant {idx + 1}: {label}",
+            scaled,
             confidence=conf,
-            note=f"{raw_text}",
+            note=f"{text}",
         )
 
-    return (paddle_best_text, paddle_best_conf) if return_confidence else paddle_best_text
+    _record_debug_image(
+        debug_store,
+        roi.name if roi else None,
+        "digits final version(paddle)",
+        best_img if best_img is not None else color,
+        confidence=best_conf,
+        note=best_text,
+    )
+    return (best_text, best_conf) if return_confidence else best_text
 
 def extract_text(
     image: np.ndarray,
-    allowlist: Optional[str] = None,
     return_confidence: bool = False,
     debug_store: Optional[Dict[str, List[dict]]] = None,
     roi_name: Optional[str] = None,
@@ -370,21 +406,21 @@ def extract_text(
         return ("", 0.0) if return_confidence else ""
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     variants = _generate_variants(color, color_path)
-    paddle_best_text = ""
-    paddle_best_score = float("-inf")
-    paddle_best_conf = 0.0
-    paddle_best_image: Optional[np.ndarray] = None
+    best_text = ""
+    best_conf = 0.0
+    best_score = float("-inf")
+    best_image: Optional[np.ndarray] = None
 
     for idx, (label, variant) in enumerate(variants):
         scaled = upscale(variant, factor=2.8)
         text, conf = paddle_textrec_read(scaled)
         cleaned_text = tidy_text(text)
         score = conf + min(len(cleaned_text) * 0.01, 0.4) if cleaned_text else float("-inf")
-        if score > paddle_best_score:
-            paddle_best_score = score
-            paddle_best_text = cleaned_text
-            paddle_best_conf = conf
-            paddle_best_image = scaled
+        if score > best_score:
+            best_score = score
+            best_text = cleaned_text
+            best_conf = conf
+            best_image = scaled
         _record_debug_image(
             debug_store,
             roi_name,
@@ -394,55 +430,15 @@ def extract_text(
             note=f"{text}",
         )
 
-    paddle_threshold = 0.5
-    final_text = ""
-    final_conf = 0.0
-    final_image = None
-    final_backend = None
-
-    if paddle_best_text and paddle_best_conf >= paddle_threshold:
-        final_text = paddle_best_text
-        final_conf = paddle_best_conf
-        final_image = paddle_best_image
-        final_backend = "paddle"
-    else:
-        easy_best_text = ""
-        easy_best_score = float("-inf")
-        easy_best_conf = 0.0
-        easy_best_image: Optional[np.ndarray] = None
-        for idx, (label, variant) in enumerate(variants):
-            scaled = upscale(variant, factor=2.8)
-            text, conf = easyocr_raw_read(scaled, allowlist=allowlist)
-            cleaned_text = tidy_text(text)
-            score = conf + min(len(cleaned_text) * 0.01, 0.4) if cleaned_text else float("-inf")
-            if score > easy_best_score:
-                easy_best_score = score
-                easy_best_text = cleaned_text
-                easy_best_conf = conf
-                easy_best_image = scaled
-            _record_debug_image(
-                debug_store,
-                roi_name,
-                f"text variant {idx + 1}: {label} (easyocr)",
-                scaled,
-                confidence=conf,
-                note=f"{text}",
-            )
-
-        final_text = easy_best_text
-        final_conf = easy_best_conf
-        final_image = easy_best_image
-        final_backend = "easyocr" if easy_best_text else None
-
     _record_debug_image(
         debug_store,
         roi_name,
-        "text final",
-        final_image if final_image is not None else color,
-        note=f"{final_text} (backend: {final_backend})",
-        confidence=final_conf,
+        "text final (paddle)",
+        best_image if best_image is not None else color,
+        note=best_text,
+        confidence=best_conf,
     )
-    return (final_text, final_conf) if return_confidence else final_text
+    return (best_text, best_conf) if return_confidence else best_text
 
 def detect_checkbox(
     image: np.ndarray,
@@ -453,45 +449,94 @@ def detect_checkbox(
 ) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("false", 0.0) if return_confidence else "false"
+
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    value = detect_blue_checkbox(color)
-    confidence = 1.0 if value == "true" else 0.0
-    _record_debug_image(debug_store, roi_name, "checkbox: input", color, confidence=confidence)
+    emphasis = _base_gray_clahe(color) if color_path == "black" else emphasize_blue_ink(color)
+    normalized = cv2.normalize(emphasis, None, 0, 255, cv2.NORM_MINMAX)
+    normalized = normalized.astype(np.uint8)
+    _, mask = cv2.threshold(normalized, 200, 255, cv2.THRESH_BINARY)
+
+    ratio = float(cv2.countNonZero(mask)) / float(mask.size) if mask.size else 0.0
+    checked = ratio > 0.003
+    value = "true" if checked else "false"
+    confidence = float(min(1.0, ratio / 0.01)) if checked else float(max(0.0, 1.0 - ratio / 0.01))
+
+    note = f"value={value}, ratio={ratio:.5f}"
+    _record_debug_image(debug_store, roi_name, "checkbox emphasis", normalized, confidence=confidence, note=note)
     if return_confidence:
         return value, confidence
     return value
-
-def _format_date(dt: datetime.date) -> str:
-    return dt.strftime("%d.%m.%Y")
 
 def extract_roi_value(
     roi: RoiSpec,
     color_img: np.ndarray,
     gray_img: np.ndarray,
     debug_store: Optional[Dict[str, List[dict]]] = None,
-) -> str:
+) -> ExtractedField:
     height, width = gray_img.shape[:2]
     y1, y2, x1, x2 = roi_to_pixels(roi, height, width)
     crop_color = color_img[y1:y2, x1:x2]
     color_path = choose_color_path(roi)
     _record_debug_image(debug_store, roi.name, f"roi crop", crop_color)
-    if roi.kind == "digits" or roi.kind == "date":
-        value = extract_digits(
+    raw_value: str
+    confidence: float
+
+    if roi.kind in ("digits", "date"):
+        raw_value, confidence = extract_digits(
             crop_color,
+            return_confidence=True,
             debug_store=debug_store,
-            roi_name=roi.name,
+            roi=roi,
             color_path=color_path,
         )
+        cleaned_digits = normalize_digits_from_text(raw_value)
+        value = cleaned_digits
+        if roi.kind == "date":
+            formatted = format_date_digits(cleaned_digits)
+            value = formatted if formatted is not None else cleaned_digits
     elif roi.kind == "checkbox":
-        value = detect_checkbox(crop_color, debug_store=debug_store, roi_name=roi.name, color_path=color_path)
-    else:
-        value = extract_text(
+        raw_value, confidence = detect_checkbox(
             crop_color,
+            return_confidence=True,
             debug_store=debug_store,
             roi_name=roi.name,
             color_path=color_path,
         )
-    return value.strip()
+        value = raw_value.strip()
+    else:
+        raw_value, confidence = extract_text(
+            crop_color,
+            return_confidence=True,
+            debug_store=debug_store,
+            roi_name=roi.name,
+            color_path=color_path,
+        )
+        value = tidy_text(raw_value)
+
+    min_conf = MIN_CONFIDENCE_BY_KIND.get(roi.kind, MIN_CONFIDENCE_BY_KIND["text"])
+    reasons: List[str] = []
+    length = len(value)
+
+    if roi.kind != "checkbox" and not value:
+        reasons.append("empty value")
+    if confidence < min_conf:
+        reasons.append(f"low confidence {confidence:.2f} < {min_conf:.2f}")
+    if roi.expected_length is not None and length != roi.expected_length:
+        reasons.append(f"length {length} != expected {roi.expected_length}")
+    if roi.min_length is not None and length < roi.min_length:
+        reasons.append(f"length {length} < min {roi.min_length}")
+    if roi.max_length is not None and length > roi.max_length:
+        reasons.append(f"length {length} > max {roi.max_length}")
+
+    needs_review = bool(reasons)
+    review_reason = "; ".join(reasons) if reasons else None
+    return ExtractedField(
+        name=roi.name,
+        value=value,
+        confidence=float(confidence),
+        needs_review=needs_review,
+        review_reason=review_reason,
+    )
 
 
 def extract_fields(
@@ -500,7 +545,7 @@ def extract_fields(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     debug: bool = False,
 ):
-    """Return structured values and optional ROI preview overlay."""
+    """Return normalized values, confidences, review flags, and optional ROI preview overlay."""
     total_roi = len(ROI_SPECS)
     base_steps = 3.0
     total_steps = float(max(total_roi + base_steps, 1.0))
@@ -537,9 +582,19 @@ def extract_fields(
     # _record_debug_image(debug_store, "preview", f"deskew aligned", deskew_img(aligned))
     # _record_debug_image(debug_store, "preview", f"denoise original", denoise_img(original))
 
-    extracted = {}
+    values: Dict[str, str] = {}
+    confidences: Dict[str, float] = {}
+    review_info: Dict[str, Dict[str, Any]] = {}
     for roi in ROI_SPECS:
-        extracted[roi.name] = extract_roi_value(roi, aligned, gray, debug_store=debug_store)
+        field = extract_roi_value(roi, aligned, gray, debug_store=debug_store)
+        values[roi.name] = field.value
+        confidences[roi.name] = field.confidence
+        review_info[roi.name] = {
+            "needs_review": field.needs_review,
+            "reason": field.review_reason or "",
+            "description": roi.description,
+            "kind": roi.kind,
+        }
         advance(f"Processed ROI: {roi.name}", weight=1.0)
 
     if progress_callback:
@@ -560,6 +615,6 @@ def extract_fields(
                 1,
                 cv2.LINE_AA,
             )
-        return preview_img, extracted, (debug_store or {})
+        return preview_img, values, confidences, review_info, (debug_store or {})
 
-    return extracted, (debug_store or {})
+    return values, confidences, review_info, (debug_store or {})
