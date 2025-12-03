@@ -107,7 +107,7 @@ if uploaded_file:
         progress_status.empty()
         st.error(
             "OCR failed to run. "
-            "If you are offline, download PaddleOCR models in advance or allow temporary network access. "
+            "If you are offline, download PaddleOCR model in advance or allow temporary network access."
             f"Details: {exc}"
         )
         st.stop()

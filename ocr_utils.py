@@ -349,6 +349,7 @@ def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np
     variants.append(("emphasis", emphasis))
     variants.append(("emphasis_inv", cv2.bitwise_not(emphasis)))
     denoise = cv2.medianBlur(emphasis, 3)
+    variants.append(("emphasis_denoised", denoise))
     variants.append(("emphasis_denoised_inv", cv2.bitwise_not(denoise)))
     return variants
 
