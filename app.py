@@ -31,6 +31,10 @@ LANGUAGE_OPTIONS = {
         "debug_label": "Show ROI debug layers",
         "debug_section": "ROI debug layers",
         "debug_empty": "No debug layers captured.",
+        "values_tab": "Values",
+        "review_tab": "Confidences & Review",
+        "review_header": "Confidences & Review",
+        "review_empty": "No review info available.",
     },
     "Romana": {
         "title": "CNAS Medical-Certificates DDE",
@@ -52,6 +56,10 @@ LANGUAGE_OPTIONS = {
         "debug_label": "Afiseaza etapele ROI (debug)",
         "debug_section": "Etape ROI debug",
         "debug_empty": "Nu exista etape capturate pentru debug.",
+        "values_tab": "Valori",
+        "review_tab": "Confidenta si revizuire",
+        "review_header": "Confidente si verificare",
+        "review_empty": "Nu exista informatii de verificare.",
     },
 }
 
@@ -87,20 +95,45 @@ if uploaded_file:
         progress_bar.progress(progress_value)
         progress_status.text(message)
 
-    preview_image, extracted, debug_layers = extract_fields(
-        io.BytesIO(file_bytes),
-        preview=True,
-        progress_callback=report_progress,
-        debug=debug_mode,
-    )
+    try:
+        preview_image, values, confidences, review_info, debug_layers = extract_fields(
+            io.BytesIO(file_bytes),
+            preview=True,
+            progress_callback=report_progress,
+            debug=debug_mode,
+        )
+    except Exception as exc:
+        progress_bar_container.empty()
+        progress_status.empty()
+        st.error(
+            "OCR failed to run. "
+            "If you are offline, download PaddleOCR model in advance or allow temporary network access."
+            f"Details: {exc}"
+        )
+        st.stop()
 
-    # Sort extracted fields by keys
-    extracted = dict(sorted(extracted.items()))
+    sorted_names = sorted(values.keys())
+    values = {name: values[name] for name in sorted_names}
+    confidences = {name: confidences.get(name, 0.0) for name in sorted_names}
+    review_info = {name: review_info.get(name, {}) for name in sorted_names}
 
     progress_bar_container.empty()
     progress_status.empty()
 
-    results_df = pd.DataFrame([extracted])
+    results_df = pd.DataFrame([values])
+    review_rows = [
+        {
+            "field": name,
+            "value": values.get(name, ""),
+            "confidence": confidences.get(name, 0.0),
+            "needs_review": review_info.get(name, {}).get("needs_review", False),
+            "reason": review_info.get(name, {}).get("reason", ""),
+            "kind": review_info.get(name, {}).get("kind"),
+            "description": review_info.get(name, {}).get("description"),
+        }
+        for name in sorted_names
+    ]
+    review_df = pd.DataFrame(review_rows)
 
     excel_buffer = io.BytesIO()
     with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
@@ -121,27 +154,45 @@ if uploaded_file:
                             caption = layer.get("label", "")
                             if layer.get("note"):
                                 caption = f"{caption} ({layer['note']})" if caption else layer["note"]
+                            conf = layer.get("confidence")
+                            if conf is not None:
+                                if caption:
+                                    caption = f"{caption} [conf={conf:.12f}]"
+                                else:
+                                    caption = f"conf={conf:.12f}"
                             st.image(layer.get("image"), caption=caption, width='stretch')
             else:
                 st.info(texts["debug_empty"])
     with results_col:
         st.success(texts["success"])
-        st.subheader(texts["results_header"])
-        st.json(extracted)
-        st.download_button(
-            label=texts["download_label"],
-            data=excel_bytes,
-            file_name="ocr_results.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="download_current_excel",
-        )
-        st.download_button(
-            label="Download results as JSON",
-            data=pd.Series(extracted).to_json(orient="index", indent=2),
-            file_name="ocr_results.json",
-            mime="application/json",
-            key="download_current_json",
-        )
+        tab_values, tab_review = st.tabs([texts["values_tab"], texts["review_tab"]])
+        with tab_values:
+            st.subheader(texts["results_header"])
+            st.json(values)
+            st.download_button(
+                label=texts["download_label"],
+                data=excel_bytes,
+                file_name="ocr_results.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="download_current_excel",
+            )
+            st.download_button(
+                label="Download results as JSON",
+                data=pd.Series(values).to_json(orient="index", indent=2),
+                file_name="ocr_results.json",
+                mime="application/json",
+                key="download_current_json",
+            )
+        with tab_review:
+            st.subheader(texts["review_header"])
+            if review_df.empty:
+                st.info(texts["review_empty"])
+            else:
+                highlight_style = review_df.style.apply(
+                    lambda row: ["background-color: #800020" if row["needs_review"] else "" for _ in row],
+                    axis=1,
+                )
+                st.dataframe(highlight_style, width="stretch")
 
     st.dataframe(results_df, width="stretch")
 
@@ -161,7 +212,10 @@ if uploaded_file:
         "file_hash": file_hash,
         "name": uploaded_file.name or "certificate.png",
         "timestamp": timestamp,
-        "results": dict(extracted),
+        "results": dict(values),
+        "values": dict(values),
+        "confidences": dict(confidences),
+        "review_info": dict(review_info),
         "preview_png": preview_bytes,
         "excel_bytes": excel_bytes,
         "original_bytes": file_bytes,
@@ -196,7 +250,29 @@ else:
                     st.caption(texts["history_preview_caption"])
                     st.info(texts["history_preview_unavailable"])
             with cols[1]:
-                st.json(entry["results"])
+                entry_values = entry.get("values") or entry.get("results", {})
+                entry_confidences = entry.get("confidences", {})
+                entry_review_info = entry.get("review_info", {})
+                tab_hist_values, tab_hist_review = st.tabs([texts["values_tab"], texts["review_tab"]])
+                with tab_hist_values:
+                    st.json(entry_values)
+                with tab_hist_review:
+                    review_rows_history = [
+                        {
+                            "field": name,
+                            "value": entry_values.get(name, ""),
+                            "confidence": entry_confidences.get(name, 0.0),
+                            "needs_review": entry_review_info.get(name, {}).get("needs_review", False),
+                            "reason": entry_review_info.get(name, {}).get("reason", ""),
+                            "kind": entry_review_info.get(name, {}).get("kind"),
+                            "description": entry_review_info.get(name, {}).get("description"),
+                        }
+                        for name in entry_values.keys()
+                    ]
+                    if review_rows_history:
+                        st.dataframe(pd.DataFrame(review_rows_history), width="stretch")
+                    else:
+                        st.info(texts["review_empty"])
 
             download_cols = st.columns(2)
             safe_timestamp = entry["timestamp"].replace(":", "-")
