@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image
 from paddleocr import TextRecognition
+from skimage.filters.rank import threshold
 
 paddle_model = TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
 TARGET_WIDTH = 1400
@@ -254,7 +255,7 @@ def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
     return enhanced
 
 def tidy_text(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
+    return re.sub(r"\s+", " ", value).strip().replace(" ", "")
 
 DIGIT_LOOKALIKES = {
     "O": "0",
@@ -276,6 +277,7 @@ DIGIT_LOOKALIKES = {
     "/": "7",
     "h": "4",
     "A": "4",
+    "d": "2",
 }
 
 MIN_CONFIDENCE_BY_KIND = {
@@ -353,6 +355,62 @@ def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np
     variants.append(("emphasis_denoised_inv", cv2.bitwise_not(denoise)))
     return variants
 
+@dataclass
+class Candidate:
+    text: str
+    conf: float
+    img: np.ndarray
+
+
+def _pick_best_candidate(
+    candidates: List[Candidate],
+    roi: Optional[RoiSpec],
+) -> Tuple[str, float, Optional[np.ndarray]]:
+    """
+    Priority:
+    1. Candidates whose len(text) == roi.expected_length (if present), pick highest conf.
+    2. Else candidates whose len(text) is within [roi.min_length, roi.max_length] (where defined), pick highest conf.
+    3. Else pick highest conf overall.
+    """
+    if not candidates:
+        return "", 0.0, None
+
+    # If no ROI at all, just pick by confidence
+    if roi is None:
+        best = max(candidates, key=lambda c: c.conf)
+        return best.text, best.conf, best.img
+
+    expected_length = getattr(roi, "expected_length", None)
+    min_length = getattr(roi, "min_length", None)
+    max_length = getattr(roi, "max_length", None)
+
+    # 1) Exact expected_length matches
+    exact_matches: List[Candidate] = []
+    if expected_length is not None:
+        exact_matches = [c for c in candidates if len(c.text) == expected_length]
+
+    if exact_matches:
+        best = max(exact_matches, key=lambda c: c.conf)
+        return best.text, best.conf, best.img
+
+    # 2) In-range matches, if we have any length constraints
+    ranged_matches: List[Candidate] = []
+    if min_length is not None or max_length is not None:
+        for c in candidates:
+            l = len(c.text)
+            if min_length is not None and l < min_length:
+                continue
+            if max_length is not None and l > max_length:
+                continue
+            ranged_matches.append(c)
+
+    if ranged_matches:
+        best = max(ranged_matches, key=lambda c: c.conf)
+        return best.text, best.conf, best.img
+
+    # 3) Fallback: best by confidence overall
+    best = max(candidates, key=lambda c: c.conf)
+    return best.text, best.conf, best.img
 
 def extract_digits(
     image: np.ndarray,
@@ -363,19 +421,18 @@ def extract_digits(
 ) -> Union[str, Tuple[str, float]]:
     if image.size == 0:
         return ("", 0.0) if return_confidence else ""
+
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     variants = _generate_variants(color, color_path)
-    best_text = ""
-    best_conf = 0.0
-    best_img: Optional[np.ndarray] = None
+
+    candidates: List[Candidate] = []
+
     for idx, (label, variant) in enumerate(variants):
         scaled = upscale(variant, factor=2.5)
         raw_text, conf = paddle_textrec_read(scaled)
-        text = raw_text.strip()
-        if conf > best_conf and roi.max_length is not None and len(text) <= roi.max_length and roi.min_length is not None and len(text) >= roi.min_length:
-            best_text = text
-            best_conf = conf
-            best_img = scaled
+        text = normalize_digits_from_text(raw_text)
+
+        candidates.append(Candidate(text=text, conf=conf, img=scaled))
 
         _record_debug_image(
             debug_store,
@@ -383,17 +440,20 @@ def extract_digits(
             f"digits variant {idx + 1}: {label}",
             scaled,
             confidence=conf,
-            note=f"{text}",
+            note=f"raw: {raw_text} | cleaned: {text}",
         )
+
+    best_text, best_conf, best_img = _pick_best_candidate(candidates, roi)
 
     _record_debug_image(
         debug_store,
         roi.name if roi else None,
-        "digits final version(paddle)",
+        "final version",
         best_img if best_img is not None else color,
         confidence=best_conf,
         note=best_text,
     )
+
     return (best_text, best_conf) if return_confidence else best_text
 
 def extract_text(
@@ -425,7 +485,7 @@ def extract_text(
         _record_debug_image(
             debug_store,
             roi_name,
-            f"text variant {idx + 1}: {label} (paddle)",
+            f"text variant {idx + 1}: {label}",
             scaled,
             confidence=conf,
             note=f"{text}",
@@ -434,7 +494,7 @@ def extract_text(
     _record_debug_image(
         debug_store,
         roi_name,
-        "text final (paddle)",
+        "final version",
         best_image if best_image is not None else color,
         note=best_text,
         confidence=best_conf,
@@ -453,9 +513,7 @@ def detect_checkbox(
 
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     emphasis = _base_gray_clahe(color) if color_path == "black" else emphasize_blue_ink(color)
-    normalized = cv2.normalize(emphasis, None, 0, 255, cv2.NORM_MINMAX)
-    normalized = normalized.astype(np.uint8)
-    _, mask = cv2.threshold(normalized, 200, 255, cv2.THRESH_BINARY)
+    _, mask = cv2.threshold(emphasis, 200, 255, cv2.THRESH_BINARY)
 
     ratio = float(cv2.countNonZero(mask)) / float(mask.size) if mask.size else 0.0
     checked = ratio > 0.003
@@ -463,7 +521,7 @@ def detect_checkbox(
     confidence = float(min(1.0, ratio / 0.01)) if checked else float(max(0.0, 1.0 - ratio / 0.01))
 
     note = f"value={value}, ratio={ratio:.5f}"
-    _record_debug_image(debug_store, roi_name, "checkbox emphasis", normalized, confidence=confidence, note=note)
+    _record_debug_image(debug_store, roi_name, "checkbox emphasis", emphasis, confidence=confidence, note=note)
     if return_confidence:
         return value, confidence
     return value
@@ -503,7 +561,7 @@ def extract_roi_value(
             roi_name=roi.name,
             color_path=color_path,
         )
-        value = raw_value.strip()
+        value = raw_value.strip().replace(" ", "")
     else:
         raw_value, confidence = extract_text(
             crop_color,

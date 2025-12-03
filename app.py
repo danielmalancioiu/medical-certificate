@@ -183,7 +183,6 @@ if uploaded_file:
                 mime="application/json",
                 key="download_current_json",
             )
-            st.dataframe(results_df, width="stretch")
         with tab_review:
             st.subheader(texts["review_header"])
             if review_df.empty:
@@ -194,6 +193,8 @@ if uploaded_file:
                     axis=1,
                 )
                 st.dataframe(highlight_style, width="stretch")
+
+    st.dataframe(results_df, width="stretch")
 
     history = st.session_state["history"]
     existing_entry = history[0] if history and history[0].get("file_hash") == file_hash else None

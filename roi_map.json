@@ -1,7 +1,7 @@
 ﻿{
   "valabil_pentru_luna_digits": {
     "roi": [
-      0.155308,
+      0.153308,
       0.206512,
       0.181662,
       0.27528
@@ -10,7 +10,7 @@
     "expected_length": 2,
     "min_length": 2,
     "max_length": 2,
-    "description": "Valabil pentru luna (litere)"
+    "description": "Valabil pentru luna (numeric)"
   },
   "valabil_pentru_anul": {
     "roi": [
@@ -42,7 +42,7 @@
     "roi": [
       0.2235,
       0.276,
-      0.2435,
+      0.2455,
       0.597
     ],
     "kind": "digits",
@@ -55,7 +55,7 @@
     "roi": [
       0.490,
       0.05,
-      0.513,
+      0.516,
       0.36
     ],
     "kind": "digits",
@@ -99,12 +99,15 @@
   },
   "nr_inregistrare": {
     "roi": [
-      0.337556,
+      0.333556,
       0.143497,
       0.360952,
       0.272759
     ],
     "kind": "digits",
+    "expected_length": 5,
+    "min_length": 1,
+    "max_length": 5,
     "description": "Numar inregistrare"
   },
   "data_acordarii": {
@@ -115,7 +118,20 @@
       0.426906
     ],
     "kind": "date",
-    "description": "Data acordarii",
+    "description": "Data acordarii in spital/ambulator",
+    "expected_length": 6,
+    "min_length": 6,
+    "max_length": 6
+  },
+  "data_acordarii_2": {
+    "roi": [
+      0.38439,
+      0.281054,
+      0.40711,
+      0.426906
+    ],
+    "kind": "date",
+    "description": "Data acordarii in concediu medical la externare",
     "expected_length": 6,
     "min_length": 6,
     "max_length": 6
@@ -128,7 +144,23 @@
       0.476367
     ],
     "kind": "digits",
-    "description": "Numar zile"
+    "expected_length": 2,
+    "min_length": 1,
+    "max_length": 2,
+    "description": "Numar zile in spital/ambulator"
+  },
+  "nr_zile_2": {
+    "roi": [
+      0.381927,
+      0.426745,
+      0.405711,
+      0.476367
+    ],
+    "kind": "digits",
+    "expected_length": 2,
+    "min_length": 1,
+    "max_length": 2,
+    "description": "Numar zile in concediu medical la externare"
   },
   "de_la": {
     "roi": [
@@ -138,7 +170,20 @@
       0.630131
     ],
     "kind": "date",
-    "description": "De la (data inceput)",
+    "description": "De la (data inceput) in spital/ambulator",
+    "expected_length": 6,
+    "min_length": 6,
+    "max_length": 6
+  },
+  "de_la_2": {
+    "roi": [
+      0.382902,
+      0.483588,
+      0.407761,
+      0.630131
+    ],
+    "kind": "date",
+    "description": "De la (data inceput) in concediu medical la externare",
     "expected_length": 6,
     "min_length": 6,
     "max_length": 6
@@ -147,11 +192,24 @@
     "roi": [
       0.361989,
       0.632652,
-      0.389755,
+      0.385755,
       0.775196
     ],
     "kind": "date",
-    "description": "Pana la (data sfarsit)",
+    "description": "Pana la (data sfarsit) in spital/ambulator",
+    "expected_length": 6,
+    "min_length": 6,
+    "max_length": 6
+  },
+  "pana_la_2": {
+    "roi": [
+      0.381989,
+      0.632652,
+      0.409755,
+      0.775196
+    ],
+    "kind": "date",
+    "description": "Pana la (data sfarsit) in concediu medical la externare",
     "expected_length": 6,
     "min_length": 6,
     "max_length": 6
@@ -164,12 +222,25 @@
       0.898839
     ],
     "kind": "digits",
-    "description": "Cod diagnostic",
+    "description": "Cod diagnostic in spital/ambulator",
     "expected_length": 3,
     "min_length": 3,
     "max_length": 3
   },
-  "adult_checkbox": {
+  "cod_diagnostic_2": {
+    "roi": [
+      0.3831,
+      0.777559,
+      0.406979,
+      0.898839
+    ],
+    "kind": "digits",
+    "description": "Cod diagnostic in concediu medical la externare",
+    "expected_length": 3,
+    "min_length": 3,
+    "max_length": 3
+  },
+  "acut_checkbox": {
     "roi": [
       0.36246,
       0.901369,
@@ -177,7 +248,57 @@
       0.927888
     ],
     "kind": "checkbox",
-    "description": "Bifa adult"
+    "description": "Bifa Acut in spital/ambulator"
+  },
+  "acut_checkbox_2": {
+    "roi": [
+      0.38246,
+      0.901369,
+      0.406214,
+      0.927888
+    ],
+    "kind": "checkbox",
+    "description": "Bifa Acut in concediu medical la externare"
+  },
+  "subacut_checkbox": {
+    "roi": [
+      0.36246,
+      0.930369,
+      0.386214,
+      0.951888
+    ],
+    "kind": "checkbox",
+    "description": "Bifa Subacut in spital/ambulator"
+  },
+  "subacut_checkbox_2": {
+    "roi": [
+      0.38246,
+      0.930369,
+      0.406214,
+      0.951888
+    ],
+    "kind": "checkbox",
+    "description": "Bifa Subacut in concediu medical la externare"
+  },
+  "cronic_checkbox": {
+    "roi": [
+      0.36246,
+      0.956369,
+      0.386214,
+      0.981888
+    ],
+    "kind": "checkbox",
+    "description": "Bifa Cronic in spital/ambulator"
+  },
+  "cronic_checkbox_2": {
+    "roi": [
+      0.38246,
+      0.956369,
+      0.406214,
+      0.981888
+    ],
+    "kind": "checkbox",
+    "description": "Bifa Cronic in concediu medical la externare"
   },
   "cod_parafa_medic": {
     "roi": [
@@ -189,7 +310,7 @@
     "kind": "digits",
     "description": "Cod parafa medic",
     "expected_length": 6,
-    "min_length": 6,
+    "min_length": 4,
     "max_length": 6
     
   },
@@ -198,12 +319,12 @@
       0.488513,
       0.750706,
       0.516414,
-      0.898874
+      0.904874
     ],
     "kind": "digits",
     "description": "Cod parafa medic sef",
     "expected_length": 6,
-    "min_length": 6,
+    "min_length": 4,
     "max_length": 6
   },
   "cod_urgenta": {
@@ -241,6 +362,9 @@
     ],
     "kind": "digits",
     "preferred_ink": "black",
+    "expected_length": 7,
+    "min_length": 7,
+    "max_length": 7,
     "description": "Nr. Serie CCMAT"
   },
   "serie_document": {
@@ -266,9 +390,9 @@
   },
   "cas_emitenta": {
     "roi": [
-      0.510428,
+      0.511428,
       0.180692,
-      0.539384,
+      0.549384,
       0.362323
     ],
     "kind": "text",
