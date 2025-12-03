@@ -30,7 +30,7 @@ if st.button("Run OCR"):
     st.success("OCR complete!")
 
     # Prepare output directory
-    os.makedirs("output", exist_ok=True)
+    # os.makedirs("output", exist_ok=True)
 
     # Collect all results for JSON download
     all_results = []
@@ -40,15 +40,15 @@ if st.button("Run OCR"):
         st.text(res)
 
         # Save result image and JSON like in your original script
-        img_save_path = os.path.join("output", f"res_{idx + 1}.png")
-        json_save_path = os.path.join("output", f"res_{idx + 1}.json")
-
-        res.save_to_img(save_path=img_save_path)
-        res.save_to_json(save_path=json_save_path)
+        # img_save_path = os.path.join("output", f"res_{idx + 1}.png")
+        # json_save_path = os.path.join("output", f"res_{idx + 1}.json")
+        #
+        # res.save_to_img(save_path=img_save_path)
+        # res.save_to_json(save_path=json_save_path)
 
         # For in-app preview of result image
         try:
-            res_img = Image.open(img_save_path)
+            res_img = Image.open(io.BytesIO(res.save_to_img_bytes()))
             st.image(res_img, caption=f"OCR result {idx + 1}", use_column_width=True)
         except Exception:
             pass

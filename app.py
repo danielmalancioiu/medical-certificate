@@ -131,6 +131,12 @@ if uploaded_file:
                             caption = layer.get("label", "")
                             if layer.get("note"):
                                 caption = f"{caption} ({layer['note']})" if caption else layer["note"]
+                            conf = layer.get("confidence")
+                            if conf is not None:
+                                if caption:
+                                    caption = f"{caption} [conf={conf:.6f}]"
+                                else:
+                                    caption = f"conf={conf:.6f}"
                             st.image(layer.get("image"), caption=caption, width='stretch')
             else:
                 st.info(texts["debug_empty"])

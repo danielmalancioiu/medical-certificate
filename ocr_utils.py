@@ -5,6 +5,7 @@ import io
 import json
 import math
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
@@ -17,11 +18,9 @@ from deskew import determine_skew
 from paddleocr import TextRecognition
 
 reader = easyocr.Reader(["en"], gpu=True)
+paddle_model = TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
 TARGET_WIDTH = 1400
 TARGET_HEIGHT = 1980
-
-def load_model():
-    return TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
 
 @dataclass(frozen=True)
 class RoiSpec:
@@ -32,8 +31,6 @@ class RoiSpec:
     right: float
     kind: str = "text"  # text | digits | date | checkbox
     description: Optional[str] = None
-    margin: Optional[float] = None
-    auto_trim: Optional[float] = None
     expected_length: Optional[int] = None
     min_length: Optional[int] = None
     max_length: Optional[int] = None
@@ -63,8 +60,6 @@ def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
             raise ValueError(f"ROI '{name}' must define 'roi' as a list of four numbers.")
 
         top, left, bottom, right = coords
-        margin_value = payload.get("margin")
-        auto_trim_value = payload.get("auto_trim")
         expected_length = payload.get("expected_length")
         min_length = payload.get("min_length")
         max_length = payload.get("max_length")
@@ -78,8 +73,6 @@ def _load_roi_specs(path: Path = ROI_MAP_PATH) -> List[RoiSpec]:
                 right=float(right),
                 kind=payload.get("kind", "text"),
                 description=payload.get("description"),
-                margin=float(margin_value) if margin_value is not None else None,
-                auto_trim=float(auto_trim_value) if auto_trim_value is not None else None,
                 expected_length=int(expected_length) if expected_length is not None else None,
                 min_length=int(min_length) if min_length is not None else None,
                 max_length=int(max_length) if max_length is not None else None,
@@ -107,6 +100,7 @@ def _record_debug_image(
     label: str,
     image: Optional[np.ndarray],
     note: Optional[str] = None,
+    confidence: Optional[float] = None,
 ) -> None:
     """Store a copy of an intermediate image for later inspection."""
     if store is None or roi_name is None or image is None:
@@ -122,6 +116,8 @@ def _record_debug_image(
     entry = {"label": label, "image": display}
     if note:
         entry["note"] = note
+    if confidence is not None:
+        entry["confidence"] = float(confidence)
     store.setdefault(roi_name, []).append(entry)
 
 def load_image(uploaded_file) -> np.ndarray:
@@ -258,12 +254,29 @@ def emphasize_blue_ink(image: np.ndarray) -> np.ndarray:
 def tidy_text(value: str) -> str:
     return re.sub(r"\s+", " ", value).strip()
 
-def run_easyocr(image: np.ndarray, allowlist: Optional[str] = None) -> str:
+def paddle_textrec_read(
+    image: np.ndarray
+) -> Tuple[str, float]:
+    """Run PaddleOCR TextRecognition on an image and return text and confidence."""
     if image.size == 0:
-        return ""
-    rgb = cv2.cvtColor(image if len(image.shape) == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR), cv2.COLOR_BGR2RGB)
-    lines = reader.readtext(rgb, detail=0, paragraph=True, allowlist=allowlist)
-    return " ".join(lines).strip()
+        return "", 0.0
+    bgr = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+    rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+    try:
+        res = paddle_model.predict(input=rgb)
+    except TypeError:
+        res = paddle_model.predict(rgb)
+
+    if isinstance(res, tuple) and len(res) > 0:
+        res = res[0]
+
+    if isinstance(res, list) and len(res) > 0 and isinstance(res[0], dict):
+        payload = res[0]
+        text = payload.get("rec_text", "") or ""
+        score = float(payload.get("rec_score", 0.0) or 0.0)
+        return text, score
+
+    return "", 0.0
 
 def easyocr_raw_read(image: np.ndarray, allowlist: Optional[str] = None) -> Tuple[str, float]:
     """Run EasyOCR without thresholding; return concatenated text and best confidence."""
@@ -286,53 +299,22 @@ def detect_blue_checkbox(roi_bgr: np.ndarray) -> str:
     ratio = cv2.countNonZero(binv) / float(binv.size)
     return "true" if ratio >= 0.006 else "false"
 
-
 def _base_gray_clahe(image: np.ndarray) -> np.ndarray:
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     return clahe.apply(gray)
 
-
-def deskew_img(image: np.ndarray) -> np.ndarray:
-    try:
-        angle = determine_skew(image)
-        old_width, old_height = image.shape[:2]
-        angle_radian = math.radians(angle)
-        width = abs(np.sin(angle_radian) * old_height) + abs(
-            np.cos(angle_radian) * old_width
-        )
-        height = abs(np.sin(angle_radian) * old_width) + abs(
-            np.cos(angle_radian) * old_height
-        )
-
-        image_center = tuple(np.array(image.shape[1::-1]) / 2)
-        rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
-        rot_mat[1, 2] += (width - old_width) / 2
-        rot_mat[0, 2] += (height - old_height) / 2
-        return cv2.warpAffine(
-            image,
-            rot_mat,
-            (int(round(height)), int(round(width))),
-            borderValue=(0, 0, 0),
-        )
-    except:
-        return image
-
-def normalize_img(img: np.ndarray) -> np.ndarray:
-    return cv2.normalize(img, None, alpha=0, beta=255, norm_type=cv2.NORM_MINMAX)
-
 def denoise_img(img: np.ndarray) -> np.ndarray:
     return cv2.bilateralFilter(img, 5, 55, 60)
-
-def grayscale_img(img: np.ndarray) -> np.ndarray:
-    return cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
 def threshold_img(img: np.ndarray, threshold_val: int) -> np.ndarray:
     _, img_thresh = cv2.threshold(img, threshold_val, 255, 1)
     return img_thresh
 
 def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np.ndarray]]:
-    variants: List[Tuple[str, np.ndarray]] = []
+    variants: List[Tuple[str, np.ndarray]] = [
+        ("original", image),
+    ]
     if color_path == "black":
         base_gray = _base_gray_clahe(image)
         variants.append(("gray", base_gray))
@@ -348,9 +330,6 @@ def _generate_variants(image: np.ndarray, color_path: str) -> List[Tuple[str, np
 
 def extract_digits(
     image: np.ndarray,
-    expected_length: Optional[int] = None,
-    min_length: Optional[int] = None,
-    max_length: Optional[int] = None,
     return_confidence: bool = False,
     debug_store: Optional[Dict[str, List[dict]]] = None,
     roi_name: Optional[str] = None,
@@ -360,63 +339,24 @@ def extract_digits(
         return ("", 0.0) if return_confidence else ""
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     variants = _generate_variants(color, color_path)
-
-    best_text = ""
-    best_score = float("-inf")
-    best_conf = 0.0
+    paddle_best_text = ""
+    paddle_best_conf = 0.0
     for idx, (label, variant) in enumerate(variants):
-        scaled = upscale(variant, factor=3.0)
-        _record_debug_image(debug_store, roi_name, f"digits variant {idx + 1}: {label}", scaled)
-        raw_text, conf = easyocr_raw_read(scaled, allowlist="0123456789")
-        cleaned = re.sub(r"[\s\W]+", "", raw_text)
-        digits_only = re.sub(r"[^0-9]", "", cleaned)
-        if max_length is not None and len(digits_only) > max_length:
-            digits_only = digits_only[:max_length]
-        candidates = [digits_only]
-        target_len = expected_length or max_length
-        if target_len and len(digits_only) > target_len:
-            for start in range(0, len(digits_only) - target_len + 1):
-                window = digits_only[start : start + target_len]
-                candidates.append(window)
-        for candidate_text in candidates:
-            if expected_length is not None and len(candidate_text) != expected_length:
-                continue
-            if min_length is not None and len(candidate_text) < min_length:
-                continue
-            score = conf + min(len(candidate_text) * 0.02, 0.5)
-            if score > best_score:
-                best_score = score
-                best_text = candidate_text
-                best_conf = conf
-    if not best_text:
-        return ("", 0.0) if return_confidence else ""
-    if max_length is not None and len(best_text) > max_length:
-        best_text = best_text[:max_length]
-    return (best_text, best_conf) if return_confidence else best_text
+        raw_text, conf = paddle_textrec_read(variant)
+        if conf > paddle_best_conf:
+            paddle_best_text = raw_text
+            paddle_best_conf = conf
 
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"variant {idx + 1}: {label}",
+            variant,
+            confidence=conf,
+            note=f"{raw_text}",
+        )
 
-def extract_cnp(
-    image: np.ndarray,
-    debug_store: Optional[Dict[str, List[dict]]] = None,
-    roi_name: Optional[str] = None,
-    color_path: str = "blue",
-) -> str:
-    if image.size == 0:
-        return ""
-    color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    variants = _generate_variants(color, color_path)
-    best_cnp = ""
-    best_score = float("-inf")
-    for idx, (label, variant) in enumerate(variants):
-        scaled = upscale(variant, factor=3.0)
-        _record_debug_image(debug_store, roi_name, f"cnp variant {idx + 1}: {label}", scaled)
-        raw_text, conf = easyocr_raw_read(scaled, allowlist="0123456789")
-    if not best_cnp:
-        return ""
-    if not (len(best_cnp) == 13 and best_cnp[0] in "1256"):
-        return ""
-    return best_cnp
-
+    return (paddle_best_text, paddle_best_conf) if return_confidence else paddle_best_text
 
 def extract_text(
     image: np.ndarray,
@@ -430,83 +370,79 @@ def extract_text(
         return ("", 0.0) if return_confidence else ""
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
     variants = _generate_variants(color, color_path)
-    best_text = ""
-    best_score = float("-inf")
-    best_conf = 0.0
+    paddle_best_text = ""
+    paddle_best_score = float("-inf")
+    paddle_best_conf = 0.0
+    paddle_best_image: Optional[np.ndarray] = None
+
     for idx, (label, variant) in enumerate(variants):
         scaled = upscale(variant, factor=2.8)
-        _record_debug_image(debug_store, roi_name, f"text variant {idx + 1}: {label}", scaled)
-        text, conf = easyocr_raw_read(scaled, allowlist=allowlist)
+        text, conf = paddle_textrec_read(scaled)
         cleaned_text = tidy_text(text)
-        if not cleaned_text:
-            continue
-        score = conf + min(len(cleaned_text) * 0.01, 0.4)
-        if score > best_score:
-            best_score = score
-            best_text = cleaned_text
-            best_conf = conf
-    if return_confidence:
-        return best_text, best_conf
-    return best_text
+        score = conf + min(len(cleaned_text) * 0.01, 0.4) if cleaned_text else float("-inf")
+        if score > paddle_best_score:
+            paddle_best_score = score
+            paddle_best_text = cleaned_text
+            paddle_best_conf = conf
+            paddle_best_image = scaled
+        _record_debug_image(
+            debug_store,
+            roi_name,
+            f"text variant {idx + 1}: {label} (paddle)",
+            scaled,
+            confidence=conf,
+            note=f"{text}",
+        )
 
+    paddle_threshold = 0.5
+    final_text = ""
+    final_conf = 0.0
+    final_image = None
+    final_backend = None
 
-def extract_date(
-    image: np.ndarray,
-    expected_length: int = 6,
-    return_confidence: bool = False,
-    debug_store: Optional[Dict[str, List[dict]]] = None,
-    roi_name: Optional[str] = None,
-    prefer_century: Optional[int] = None,
-    color_path: str = "blue",
-) -> Union[str, Tuple[str, float]]:
-    if image.size == 0:
-        return ("", 0.0) if return_confidence else ""
-    color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    variants = _generate_variants(color, color_path)
-    best_value = ""
-    best_score = float("-inf")
-    best_conf = 0.0
-    for idx, (label, variant) in enumerate(variants):
-        scaled = upscale(variant, factor=3.0)
-        _record_debug_image(debug_store, roi_name, f"date variant {idx + 1}: {label}", scaled)
-        raw_text, conf = easyocr_raw_read(scaled, allowlist="0123456789.")
-        cleaned_digits = re.sub(r"[^0-9]", "", raw_text)
+    if paddle_best_text and paddle_best_conf >= paddle_threshold:
+        final_text = paddle_best_text
+        final_conf = paddle_best_conf
+        final_image = paddle_best_image
+        final_backend = "paddle"
+    else:
+        easy_best_text = ""
+        easy_best_score = float("-inf")
+        easy_best_conf = 0.0
+        easy_best_image: Optional[np.ndarray] = None
+        for idx, (label, variant) in enumerate(variants):
+            scaled = upscale(variant, factor=2.8)
+            text, conf = easyocr_raw_read(scaled, allowlist=allowlist)
+            cleaned_text = tidy_text(text)
+            score = conf + min(len(cleaned_text) * 0.01, 0.4) if cleaned_text else float("-inf")
+            if score > easy_best_score:
+                easy_best_score = score
+                easy_best_text = cleaned_text
+                easy_best_conf = conf
+                easy_best_image = scaled
+            _record_debug_image(
+                debug_store,
+                roi_name,
+                f"text variant {idx + 1}: {label} (easyocr)",
+                scaled,
+                confidence=conf,
+                note=f"{text}",
+            )
 
-        candidates = [cleaned_digits]
-        if expected_length and len(cleaned_digits) > expected_length:
-            for start in range(0, len(cleaned_digits) - expected_length + 1):
-                window = cleaned_digits[start : start + expected_length]
-                candidates.append(window)
-        for candidate in candidates:
-            if len(candidate) != expected_length:
-                continue
-            elif expected_length == 8:
-                day = int(candidate[:2])
-                month = int(candidate[2:4])
-                year = int(candidate[4:8])
-                try:
-                    _ = datetime.date(year, month, day)
-                    valid = True
-                except ValueError:
-                    valid = False
-            else:
-                valid = True
+        final_text = easy_best_text
+        final_conf = easy_best_conf
+        final_image = easy_best_image
+        final_backend = "easyocr" if easy_best_text else None
 
-            if not valid:
-                continue
-
-            score = conf + min(len(candidate) * 0.02, 0.5)
-            if score > best_score:
-                best_score = score
-                best_value = candidate
-                best_conf = conf
-
-    if best_score == float("-inf"):
-        return ("", 0.0) if return_confidence else ""
-    if return_confidence:
-        return best_value, best_conf
-    return best_value
-
+    _record_debug_image(
+        debug_store,
+        roi_name,
+        "text final",
+        final_image if final_image is not None else color,
+        note=f"{final_text} (backend: {final_backend})",
+        confidence=final_conf,
+    )
+    return (final_text, final_conf) if return_confidence else final_text
 
 def detect_checkbox(
     image: np.ndarray,
@@ -518,27 +454,12 @@ def detect_checkbox(
     if image.size == 0:
         return ("false", 0.0) if return_confidence else "false"
     color = image if image.ndim == 3 else cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    _record_debug_image(debug_store, roi_name, "checkbox: input", color)
     value = detect_blue_checkbox(color)
+    confidence = 1.0 if value == "true" else 0.0
+    _record_debug_image(debug_store, roi_name, "checkbox: input", color, confidence=confidence)
     if return_confidence:
-        return value, 1.0 if value == "true" else 0.0
+        return value, confidence
     return value
-
-
-def _parse_date_strict(value: str) -> Optional[datetime.date]:
-    digits = re.sub(r"[^0-9]", "", value)
-    if len(digits) == 8:
-        day, month, year = int(digits[:2]), int(digits[2:4]), int(digits[4:8])
-    elif len(digits) >= 6:
-        day, month, year2 = int(digits[:2]), int(digits[2:4]), int(digits[4:6])
-        year = 2000 + year2 if year2 < 50 else 1900 + year2
-    else:
-        return None
-    try:
-        return datetime.date(year, month, day)
-    except ValueError:
-        return None
-
 
 def _format_date(dt: datetime.date) -> str:
     return dt.strftime("%d.%m.%Y")
@@ -554,45 +475,18 @@ def extract_roi_value(
     crop_color = color_img[y1:y2, x1:x2]
     color_path = choose_color_path(roi)
     _record_debug_image(debug_store, roi.name, f"roi crop", crop_color)
-    if roi.kind == "digits":
-        expected = roi.expected_length
-        min_len = roi.min_length if roi.min_length is not None else expected
-        max_len = roi.max_length if roi.max_length is not None else expected
+    if roi.kind == "digits" or roi.kind == "date":
         value = extract_digits(
             crop_color,
-            expected_length=expected,
-            min_length=min_len,
-            max_length=max_len,
             debug_store=debug_store,
             roi_name=roi.name,
             color_path=color_path,
         )
-        value = re.sub(r"[^0-9]", "", value)
-    elif roi.kind == "date":
-        expected = roi.expected_length if roi.expected_length is not None else 6
-        prefer_century = None
-        if roi.name in {"de_la", "pana_la", "data_acordarii", "data_primirii"}:
-            prefer_century = None
-        value = extract_date(
-            crop_color,
-            expected_length=expected,
-            debug_store=debug_store,
-            roi_name=roi.name,
-            prefer_century=prefer_century,
-            color_path=color_path,
-        )
-        if roi.name == "data_primirii":
-            parsed = _parse_date_strict(value)
-            value = _format_date(parsed) if parsed else ""
     elif roi.kind == "checkbox":
         value = detect_checkbox(crop_color, debug_store=debug_store, roi_name=roi.name, color_path=color_path)
     else:
-        text_allowlist = roi.allowlist
-        if roi.name in {"cod_parafa_medic", "cod_parafa_medic_sef"}:
-            text_allowlist = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
         value = extract_text(
             crop_color,
-            allowlist=text_allowlist,
             debug_store=debug_store,
             roi_name=roi.name,
             color_path=color_path,
