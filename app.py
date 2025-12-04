@@ -1,6 +1,6 @@
 import hashlib
 import io
-import os
+import mimetypes
 from datetime import datetime
 from pathlib import Path
 
@@ -37,6 +37,9 @@ LANGUAGE_OPTIONS = {
         "review_tab": "Confidences & Review",
         "review_header": "Confidences & Review",
         "review_empty": "No review info available.",
+        "picker_label": "Or pick a sample from /certificate",
+        "picker_placeholder": "No sample selected",
+        "picker_error": "Selected sample could not be read.",
     },
     "Romana": {
         "title": "CNAS Medical-Certificates DDE",
@@ -62,10 +65,14 @@ LANGUAGE_OPTIONS = {
         "review_tab": "Confidenta si revizuire",
         "review_header": "Confidente si verificare",
         "review_empty": "Nu exista informatii de verificare.",
+        "picker_label": "Sau alege un fisier din /certificate",
+        "picker_placeholder": "Niciun fisier selectat",
+        "picker_error": "Fisierul selectat nu a putut fi citit.",
     },
 }
 
 MAX_HISTORY_ENTRIES = 15
+CERTIFICATE_DIR = Path(__file__).parent / "certificate"
 
 language = st.sidebar.radio("Language / Limba", list(LANGUAGE_OPTIONS.keys()), index=0)
 texts = LANGUAGE_OPTIONS[language]
@@ -81,10 +88,46 @@ st.title(texts["title"])
 st.write(texts["description"])
 
 uploaded_file = st.file_uploader(texts["uploader_label"], type=["png", "jpg", "jpeg"])
+available_samples = (
+    sorted(
+        [
+            path
+            for path in CERTIFICATE_DIR.iterdir()
+            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
+        ],
+        key=lambda p: p.name,
+    )
+    if CERTIFICATE_DIR.exists()
+    else []
+)
+sample_lookup = {path.name: path for path in available_samples}
+selected_sample_name = st.selectbox(
+    texts["picker_label"],
+    options=[""] + list(sample_lookup.keys()),
+    format_func=lambda name: texts["picker_placeholder"] if name == "" else name,
+    key="certificate_sample_select",
+)
+selected_sample_path = sample_lookup.get(selected_sample_name) if selected_sample_name else None
+
 debug_mode = st.sidebar.checkbox(texts["debug_label"], value=False)
 
+file_bytes = None
+input_name = None
+input_mime = None
 if uploaded_file:
     file_bytes = uploaded_file.getvalue()
+    input_name = uploaded_file.name or "certificate.png"
+    input_mime = uploaded_file.type or "application/octet-stream"
+elif selected_sample_path:
+    try:
+        file_bytes = selected_sample_path.read_bytes()
+        input_name = selected_sample_path.name
+        guessed_mime, _ = mimetypes.guess_type(selected_sample_path.name)
+        input_mime = guessed_mime or "image/png"
+    except Exception as exc:
+        st.error(f"{texts['picker_error']} ({exc})")
+
+if file_bytes:
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
     progress_status = st.empty()
@@ -212,7 +255,7 @@ if uploaded_file:
 
     history_entry = {
         "file_hash": file_hash,
-        "name": uploaded_file.name or "certificate.png",
+        "name": input_name or "certificate.png",
         "timestamp": timestamp,
         "results": dict(values),
         "values": dict(values),
@@ -221,7 +264,7 @@ if uploaded_file:
         "preview_png": preview_bytes,
         "excel_bytes": excel_bytes,
         "original_bytes": file_bytes,
-        "mime": uploaded_file.type or "application/octet-stream",
+        "mime": input_mime or "application/octet-stream",
     }
 
     if existing_entry:
@@ -239,7 +282,7 @@ if not history:
 else:
     for idx, entry in enumerate(history):
         entry_title = f"{entry['timestamp']} - {entry['name']}"
-        with st.expander(entry_title, expanded=(idx == 0 and uploaded_file is not None)):
+        with st.expander(entry_title, expanded=(idx == 0 and file_bytes is not None)):
             cols = st.columns((3, 2))
             with cols[0]:
                 if entry.get("preview_png"):

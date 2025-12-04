@@ -549,7 +549,7 @@ def detect_checkbox(
     _, mask = cv2.threshold(emphasis, 200, 255, cv2.THRESH_BINARY)
 
     ratio = float(cv2.countNonZero(mask)) / float(mask.size) if mask.size else 0.0
-    checked = ratio > 0.003
+    checked = ratio > 0.03
     value = "true" if checked else "false"
     confidence = float(min(1.0, ratio / 0.01)) if checked else float(max(0.0, 1.0 - ratio / 0.01))
 
