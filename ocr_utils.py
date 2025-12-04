@@ -11,9 +11,12 @@ import cv2
 import numpy as np
 from PIL import Image
 from paddleocr import TextRecognition
-from skimage.filters.rank import threshold
 
-paddle_model = TextRecognition(model_name="en_PP-OCRv5_mobile_rec")
+BASE_DIR = Path(__file__).resolve().parent
+local_paddlex = BASE_DIR / ".paddlex"
+official_models_dir = local_paddlex / "official_models"
+OCRv5_mobile_rec_dir = official_models_dir / "en_PP-OCRv5_mobile_rec"
+paddle_model = TextRecognition(model_name="en_PP-OCRv5_mobile_rec", model_dir=OCRv5_mobile_rec_dir)
 TARGET_WIDTH = 1400
 TARGET_HEIGHT = 1980
 
